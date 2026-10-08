@@ -87,6 +87,7 @@
 ## Розгортання БД з нуля
 
 ```bash
+sqlcmd -Q "CREATE DATABASE EnrollmentsDb; CREATE DATABASE CatalogDb;"
 sqlcmd -d EnrollmentsDb -i db/p1/schema.sql
 sqlcmd -d EnrollmentsDb -i db/p1/procedures.sql
 sqlcmd -d EnrollmentsDb -i db/p1/seed.sql
@@ -97,7 +98,7 @@ mongosh feedbackdb db/p3/collections.js
 mongosh feedbackdb db/p3/seed.js
 ```
 
-Повторний запуск `seed` не створює дублікатів (`IF NOT EXISTS` / `find-or-create`). ERD: `docs/erd-p1.dbml`, `docs/erd-p2.dbml` (відкрити на dbdiagram.io).
+Повторний запуск `seed` не створює дублікатів (`IF NOT EXISTS` / `find-or-create`). ERD: `docs/erd-p1.svg`, `docs/erd-p2.svg` (джерела для dbdiagram.io: `docs/erd-p1.dbml`, `docs/erd-p2.dbml`).
 
 ## Запуск сервісів (Aspire)
 

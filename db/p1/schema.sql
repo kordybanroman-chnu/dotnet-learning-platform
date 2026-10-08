@@ -1,3 +1,5 @@
+-- EnrollmentsDb: PK = BIGINT IDENTITY. Id генерує лише ця БД (послідовна
+-- вставка з одного джерела), тому GUID не потрібен.
 SET QUOTED_IDENTIFIER ON;
 SET ANSI_NULLS ON;
 GO
@@ -55,11 +57,15 @@ CREATE TABLE dbo.EnrollmentItems (
 );
 GO
 
+-- Індекс під запит "записи студента з певним статусом" (сторінка "Мої курси").
 CREATE INDEX IX_Enrollments_StudentId_Status ON dbo.Enrollments (StudentId, Status);
 GO
+-- Індекс під запит "лише живі записи" (WHERE IsDeleted = 0).
 CREATE INDEX IX_Enrollments_Active ON dbo.Enrollments (StudentId) WHERE IsDeleted = 0;
 GO
+-- Індекс під запит "хто записаний на курс" (перевірка попиту / розсилка).
 CREATE INDEX IX_EnrollmentItems_CourseId ON dbo.EnrollmentItems (CourseId);
 GO
+-- Індекс під запит "живі студенти за email" (логін).
 CREATE INDEX IX_Students_Email_Active ON dbo.Students (Email) WHERE IsDeleted = 0;
 GO
