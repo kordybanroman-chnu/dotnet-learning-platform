@@ -1,0 +1,50 @@
+Table Instructors {
+  Id bigint [pk, increment]
+  FullName nvarchar(200) [not null]
+  Bio nvarchar(2000)
+  CreatedAt datetime2 [not null, default: `SYSUTCDATETIME()`]
+}
+
+Table Categories {
+  Id bigint [pk, increment]
+  Name nvarchar(150) [not null]
+  Slug nvarchar(150) [unique, not null]
+  CreatedAt datetime2 [not null, default: `SYSUTCDATETIME()`]
+}
+
+Table Courses {
+  Id bigint [pk, increment]
+  Slug nvarchar(200) [unique, not null]
+  Title nvarchar(200) [not null]
+  Price decimal(18,2) [not null]
+  InstructorId bigint [not null, ref: > Instructors.Id]
+  CreatedAt datetime2 [not null, default: `SYSUTCDATETIME()`]
+
+  Indexes {
+    Title [name: 'IX_Courses_Title']
+  }
+}
+
+Table CourseDetails {
+  CourseId bigint [pk, ref: > Courses.Id]
+  Syllabus nvarchar [not null]
+  DurationHours int [not null]
+}
+
+Table CourseCategory {
+  CourseId bigint [not null, ref: > Courses.Id]
+  CategoryId bigint [not null, ref: > Categories.Id]
+  AddedAt datetime2 [not null, default: `SYSUTCDATETIME()`]
+
+  Indexes {
+    (CourseId, CategoryId) [pk]
+    (CategoryId) [name: 'IX_CourseCategory_CategoryId']
+  }
+}
+
+Table CourseImages {
+  Id bigint [pk, increment]
+  CourseId bigint [not null, ref: > Courses.Id]
+  Url nvarchar(500) [not null]
+  SortOrder int [not null, default: 0]
+}

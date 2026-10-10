@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="560" font-family="monospace" font-size="13">
+<rect width="100%" height="100%" fill="#fff"/>
+<text x="20" y="24" font-size="17" font-weight="bold">EnrollmentsDb — ERD</text>
+<g><rect x="30" y="50" width="273" height="188" fill="#fff" stroke="#222"/>
+<rect x="30" y="50" width="273" height="28" fill="#f0f0f0" stroke="#222"/>
+<text x="42" y="69" font-weight="bold">Students</text>
+<text x="42" y="93">Id : bigint [PK]</text>
+<text x="42" y="113">Email : nvarchar(320) [UQ]</text>
+<text x="42" y="133">FullName : nvarchar(200)</text>
+<text x="42" y="153">CreatedAt / CreatedBy</text>
+<text x="42" y="173">UpdatedAt / UpdatedBy</text>
+<text x="42" y="193">IsDeleted : bit</text>
+<text x="42" y="213">RowVersion : rowversion</text>
+<text x="42" y="233">IX : (Email) WHERE IsDeleted = 0</text>
+</g>
+<g><rect x="430" y="50" width="211" height="208" fill="#fff" stroke="#222"/>
+<rect x="430" y="50" width="211" height="28" fill="#f0f0f0" stroke="#222"/>
+<text x="442" y="69" font-weight="bold">Enrollments</text>
+<text x="442" y="93">Id : bigint [PK]</text>
+<text x="442" y="113">StudentId : bigint [FK]</text>
+<text x="442" y="133">Status : nvarchar(30)</text>
+<text x="442" y="153">EnrolledAt : datetime2</text>
+<text x="442" y="173">CreatedAt / CreatedBy</text>
+<text x="442" y="193">UpdatedAt / UpdatedBy</text>
+<text x="442" y="213">IsDeleted : bit</text>
+<text x="442" y="233">RowVersion : rowversion</text>
+<text x="442" y="253">IX : (StudentId, Status)</text>
+</g>
+<g><rect x="830" y="50" width="281" height="88" fill="#fff" stroke="#222"/>
+<rect x="830" y="50" width="281" height="28" fill="#f0f0f0" stroke="#222"/>
+<text x="842" y="69" font-weight="bold">EnrollmentDetails</text>
+<text x="842" y="93">EnrollmentId : bigint [PK,FK]</text>
+<text x="842" y="113">Note : nvarchar(1000)</text>
+<text x="842" y="133">PreferredSchedule : nvarchar(200)</text>
+</g>
+<g><rect x="30" y="340" width="265" height="148" fill="#fff" stroke="#222"/>
+<rect x="30" y="340" width="265" height="28" fill="#f0f0f0" stroke="#222"/>
+<text x="42" y="359" font-weight="bold">Courses (local copy, no FK out)</text>
+<text x="42" y="383">Id : bigint [PK]</text>
+<text x="42" y="403">Title : nvarchar(200)</text>
+<text x="42" y="423">Price : decimal(18,2)</text>
+<text x="42" y="443">SeatsAvailable : int</text>
+<text x="42" y="463">UpdatedAt : datetime2</text>
+<text x="42" y="483">RowVersion : rowversion</text>
+</g>
+<g><rect x="430" y="340" width="250" height="128" fill="#fff" stroke="#222"/>
+<rect x="430" y="340" width="250" height="28" fill="#f0f0f0" stroke="#222"/>
+<text x="442" y="359" font-weight="bold">EnrollmentItems (M:N)</text>
+<text x="442" y="383">EnrollmentId : bigint [PK,FK]</text>
+<text x="442" y="403">CourseId : bigint [PK,FK]</text>
+<text x="442" y="423">CourseTitle : snapshot</text>
+<text x="442" y="443">UnitPrice : snapshot</text>
+<text x="442" y="463">Units : int</text>
+</g>
+<path d="M303,144 L430,154" fill="none" stroke="#222"/><text x="354" y="136" paint-order="stroke" stroke="#fff" stroke-width="4">1:N</text>
+<path d="M641,154 L830,94" fill="none" stroke="#222"/><text x="723" y="146" paint-order="stroke" stroke="#fff" stroke-width="4">1:1</text>
+<path d="M535,258 L535,340" fill="none" stroke="#222"/><text x="543" y="299" paint-order="stroke" stroke="#fff" stroke-width="4">1:N</text>
+<path d="M295,414 L430,404" fill="none" stroke="#222"/><text x="350" y="406" paint-order="stroke" stroke="#fff" stroke-width="4">M:N</text>
+</svg>

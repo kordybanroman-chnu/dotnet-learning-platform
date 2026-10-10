@@ -1,0 +1,52 @@
+Table Students {
+  Id bigint [pk, increment]
+  Email nvarchar(320) [unique, not null]
+  FullName nvarchar(200) [not null]
+  CreatedAt datetime2 [not null, default: `SYSUTCDATETIME()`]
+  CreatedBy nvarchar(100)
+  UpdatedAt datetime2
+  UpdatedBy nvarchar(100)
+  IsDeleted bit [not null, default: 0]
+  RowVersion rowversion [not null]
+}
+
+Table Enrollments {
+  Id bigint [pk, increment]
+  StudentId bigint [not null, ref: > Students.Id]
+  Status nvarchar(30) [not null, default: 'Submitted']
+  EnrolledAt datetime2 [not null, default: `SYSUTCDATETIME()`]
+  CreatedAt datetime2 [not null, default: `SYSUTCDATETIME()`]
+  CreatedBy nvarchar(100)
+  UpdatedAt datetime2
+  UpdatedBy nvarchar(100)
+  IsDeleted bit [not null, default: 0]
+  RowVersion rowversion [not null]
+}
+
+Table EnrollmentDetails {
+  EnrollmentId bigint [pk, ref: > Enrollments.Id]
+  Note nvarchar(1000)
+  PreferredSchedule nvarchar(200)
+}
+
+Table Courses {
+  Id bigint [pk]
+  Title nvarchar(200) [not null]
+  Price decimal(18,2) [not null]
+  SeatsAvailable int [not null, default: 0]
+  UpdatedAt datetime2
+  RowVersion rowversion [not null]
+}
+
+Table EnrollmentItems {
+  EnrollmentId bigint [not null, ref: > Enrollments.Id]
+  CourseId bigint [not null, ref: > Courses.Id]
+  CourseTitle nvarchar(200) [not null]
+  UnitPrice decimal(18,2) [not null]
+  Units int [not null]
+
+  Indexes {
+    (EnrollmentId, CourseId) [pk]
+    (CourseId) [name: 'IX_EnrollmentItems_CourseId']
+  }
+}

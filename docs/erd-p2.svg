@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="500" font-family="monospace" font-size="13">
+<rect width="100%" height="100%" fill="#fff"/>
+<text x="20" y="24" font-size="17" font-weight="bold">CatalogDb — ERD</text>
+<g><rect x="30" y="50" width="211" height="108" fill="#fff" stroke="#222"/>
+<rect x="30" y="50" width="211" height="28" fill="#f0f0f0" stroke="#222"/>
+<text x="42" y="69" font-weight="bold">Instructors</text>
+<text x="42" y="93">Id : bigint [PK]</text>
+<text x="42" y="113">FullName : nvarchar(200)</text>
+<text x="42" y="133">Bio : nvarchar(2000)</text>
+<text x="42" y="153">CreatedAt : datetime2</text>
+</g>
+<g><rect x="430" y="50" width="226" height="148" fill="#fff" stroke="#222"/>
+<rect x="430" y="50" width="226" height="28" fill="#f0f0f0" stroke="#222"/>
+<text x="442" y="69" font-weight="bold">Courses</text>
+<text x="442" y="93">Id : bigint [PK]</text>
+<text x="442" y="113">Slug : nvarchar(200) [UQ]</text>
+<text x="442" y="133">Title : nvarchar(200)</text>
+<text x="442" y="153">Price : decimal(18,2)</text>
+<text x="442" y="173">InstructorId : bigint [FK]</text>
+<text x="442" y="193">CreatedAt : datetime2</text>
+</g>
+<g><rect x="830" y="50" width="218" height="88" fill="#fff" stroke="#222"/>
+<rect x="830" y="50" width="218" height="28" fill="#f0f0f0" stroke="#222"/>
+<text x="842" y="69" font-weight="bold">CourseDetails</text>
+<text x="842" y="93">CourseId : bigint [PK,FK]</text>
+<text x="842" y="113">Syllabus : nvarchar(max)</text>
+<text x="842" y="133">DurationHours : int</text>
+</g>
+<g><rect x="30" y="300" width="218" height="108" fill="#fff" stroke="#222"/>
+<rect x="30" y="300" width="218" height="28" fill="#f0f0f0" stroke="#222"/>
+<text x="42" y="319" font-weight="bold">Categories</text>
+<text x="42" y="343">Id : bigint [PK]</text>
+<text x="42" y="363">Name : nvarchar(150)</text>
+<text x="42" y="383">Slug : nvarchar(150) [UQ]</text>
+<text x="42" y="403">CreatedAt : datetime2</text>
+</g>
+<g><rect x="430" y="300" width="257" height="88" fill="#fff" stroke="#222"/>
+<rect x="430" y="300" width="257" height="28" fill="#f0f0f0" stroke="#222"/>
+<text x="442" y="319" font-weight="bold">CourseCategory (M:N + AddedAt)</text>
+<text x="442" y="343">CourseId : bigint [PK,FK]</text>
+<text x="442" y="363">CategoryId : bigint [PK,FK]</text>
+<text x="442" y="383">AddedAt : datetime2</text>
+</g>
+<g><rect x="830" y="300" width="195" height="108" fill="#fff" stroke="#222"/>
+<rect x="830" y="300" width="195" height="28" fill="#f0f0f0" stroke="#222"/>
+<text x="842" y="319" font-weight="bold">CourseImages</text>
+<text x="842" y="343">Id : bigint [PK]</text>
+<text x="842" y="363">CourseId : bigint [FK]</text>
+<text x="842" y="383">Url : nvarchar(500)</text>
+<text x="842" y="403">SortOrder : int</text>
+</g>
+<path d="M241,104 L430,124" fill="none" stroke="#222"/><text x="323" y="96" paint-order="stroke" stroke="#fff" stroke-width="4">1:N</text>
+<path d="M656,124 L830,94" fill="none" stroke="#222"/><text x="731" y="116" paint-order="stroke" stroke="#fff" stroke-width="4">1:1</text>
+<path d="M543,198 L543,300" fill="none" stroke="#222"/><text x="551" y="249" paint-order="stroke" stroke="#fff" stroke-width="4">1:N</text>
+<path d="M248,354 L430,344" fill="none" stroke="#222"/><text x="327" y="346" paint-order="stroke" stroke="#fff" stroke-width="4">1:N</text>
+<path d="M616,198 L616,268 L927,268 L927,300" fill="none" stroke="#222"/><text x="759" y="260" paint-order="stroke" stroke="#fff" stroke-width="4">1:N</text>
+</svg>
