@@ -29,6 +29,8 @@ public class CreateEnrollmentDto
 
 public record StudentDto(long Id, string Email, string FullName);
 
+public record CourseDto(long Id, string Title, decimal Price, int SeatsAvailable);
+
 public class CreateStudentDto
 {
     [Required, EmailAddress, MaxLength(320)]

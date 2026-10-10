@@ -10,5 +10,6 @@ public sealed class EnrollmentProfile : Profile
         CreateMap<EnrollmentItem, EnrollmentItemDto>();
         CreateMap<Enrollment, EnrollmentDto>();
         CreateMap<Student, StudentDto>();
+        CreateMap<Course, CourseDto>();
     }
 }

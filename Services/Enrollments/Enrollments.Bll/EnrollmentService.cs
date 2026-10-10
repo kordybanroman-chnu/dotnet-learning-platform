@@ -31,7 +31,11 @@ public sealed class EnrollmentService(IUnitOfWork uow, IMapper mapper) : IEnroll
                 PreferredSchedule = input.PreferredSchedule,
             }, ct);
             foreach (var item in input.Items)
+            {
+                _ = await uow.Courses.GetByIdAsync(item.CourseId, ct)
+                    ?? throw new NotFoundException($"Course {item.CourseId} not found");
                 await uow.Enrollments.AddItemAsync(id, item.CourseId, item.Units, ct);
+            }
             await uow.CommitAsync(ct);
             var created = await uow.Enrollments.GetWithItemsAsync(id, ct)
                 ?? throw new NotFoundException($"Enrollment {id} not found");
