@@ -102,6 +102,8 @@ mongosh feedbackdb db/p3/seed.js
 
 ## Запуск сервісів (Aspire)
 
+Перед першим запуском встановіть Aspire workload: `sudo dotnet workload install aspire`.
+
 ```bash
 dotnet run --project Platform.AppHost
 ```
