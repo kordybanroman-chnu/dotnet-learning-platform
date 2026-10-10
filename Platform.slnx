@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="Services/Enrollments/Enrollments.Domain/Enrollments.Domain.csproj" />
+  <Project Path="Services/Enrollments/Enrollments.Dal/Enrollments.Dal.csproj" />
+  <Project Path="Services/Enrollments/Enrollments.Bll/Enrollments.Bll.csproj" />
+  <Project Path="Services/Enrollments/Enrollments.Api/Enrollments.Api.csproj" />
+  <Project Path="Platform.AppHost/Platform.AppHost.csproj" />
+</Solution>
