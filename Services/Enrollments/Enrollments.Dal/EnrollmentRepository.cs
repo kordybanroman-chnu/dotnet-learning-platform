@@ -37,7 +37,7 @@ public sealed class EnrollmentRepository(SqlConnection connection, Func<SqlTrans
             (enrollment, item) =>
             {
                 result ??= enrollment;
-                if (item is not null)
+                if (item is not null && item.CourseId > 0)
                     result.Items.Add(item);
                 return result;
             },

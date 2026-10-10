@@ -38,10 +38,17 @@ public sealed class CourseRepository(SqlConnection connection, Func<SqlTransacti
     public async Task DecreaseSeatsAsync(long courseId, int units, CancellationToken ct = default)
     {
         await EnsureOpenAsync(ct);
-        var affected = await Connection.ExecuteAsync(new CommandDefinition(
-            "UPDATE dbo.Courses SET SeatsAvailable = SeatsAvailable - @Units WHERE Id = @Id AND SeatsAvailable >= @Units",
-            new { Id = courseId, Units = units }, Transaction, cancellationToken: ct));
-        if (affected == 0)
-            throw new BusinessConflictException($"Not enough seats for course {courseId}");
+        try
+        {
+            var affected = await Connection.ExecuteAsync(new CommandDefinition(
+                "UPDATE dbo.Courses SET SeatsAvailable = SeatsAvailable - @Units WHERE Id = @Id AND SeatsAvailable >= @Units",
+                new { Id = courseId, Units = units }, Transaction, cancellationToken: ct));
+            if (affected == 0)
+                throw new BusinessConflictException($"Not enough seats for course {courseId}");
+        }
+        catch (SqlException ex)
+        {
+            throw Map(ex);
+        }
     }
 }

@@ -2,6 +2,7 @@ using System.Data;
 using AutoMapper;
 using Enrollments.Dal;
 using Enrollments.Domain;
+using Microsoft.Extensions.Logging;
 
 namespace Enrollments.Bll;
 
@@ -14,7 +15,7 @@ public interface IEnrollmentService
     Task CancelAsync(long id, CancellationToken ct = default);
 }
 
-public sealed class EnrollmentService(IUnitOfWork uow, IMapper mapper) : IEnrollmentService
+public sealed class EnrollmentService(IUnitOfWork uow, IMapper mapper, ILogger<EnrollmentService> logger) : IEnrollmentService
 {
     public async Task<EnrollmentDto> CreateAsync(CreateEnrollmentDto input, CancellationToken ct = default)
     {
@@ -37,6 +38,7 @@ public sealed class EnrollmentService(IUnitOfWork uow, IMapper mapper) : IEnroll
                 await uow.Enrollments.AddItemAsync(id, item.CourseId, item.Units, ct);
             }
             await uow.CommitAsync(ct);
+            logger.LogInformation("Created enrollment {EnrollmentId} for student {StudentId}", id, input.StudentId);
             var created = await uow.Enrollments.GetWithItemsAsync(id, ct)
                 ?? throw new NotFoundException($"Enrollment {id} not found");
             return mapper.Map<EnrollmentDto>(created);
@@ -72,6 +74,7 @@ public sealed class EnrollmentService(IUnitOfWork uow, IMapper mapper) : IEnroll
                 throw new BusinessConflictException($"Enrollment {id} has no items");
             await uow.Enrollments.ConfirmAsync(id, ct);
             await uow.CommitAsync(ct);
+            logger.LogInformation("Confirmed enrollment {EnrollmentId}", id);
         }
         catch
         {
@@ -83,5 +86,6 @@ public sealed class EnrollmentService(IUnitOfWork uow, IMapper mapper) : IEnroll
     public async Task CancelAsync(long id, CancellationToken ct = default)
     {
         await uow.Enrollments.CancelAsync(id, ct);
+        logger.LogInformation("Cancelled enrollment {EnrollmentId}", id);
     }
 }
