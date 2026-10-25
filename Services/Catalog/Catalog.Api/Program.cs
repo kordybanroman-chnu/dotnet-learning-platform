@@ -53,7 +53,6 @@ if (app.Configuration.GetValue("Catalog:MigrateAndSeed", true) && !app.Environme
     await DbInitializer.SeedAsync(db);
 }
 
-app.UseExceptionHandler();
 app.Use(async (context, next) =>
 {
     using (LogContext.PushProperty("CorrelationId", context.TraceIdentifier))
@@ -63,6 +62,7 @@ app.Use(async (context, next) =>
     }
 });
 app.UseSerilogRequestLogging();
+app.UseExceptionHandler();
 app.UseSwagger();
 app.UseSwaggerUI();
 app.MapControllers();
