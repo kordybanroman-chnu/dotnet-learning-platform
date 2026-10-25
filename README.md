@@ -43,6 +43,12 @@
 │   │   ├── Enrollments.Dal/
 │   │   └── Enrollments.Domain/
 │   ├── Catalog/
+│   │   ├── Catalog.Api/
+│   │   ├── Catalog.Bll/
+│   │   ├── Catalog.Dal/
+│   │   │   ├── Configurations/
+│   │   │   └── Migrations/
+│   │   └── Catalog.Domain/
 │   └── Feedback/
 └── deploy/k8s/
 ```
@@ -87,18 +93,23 @@
 ## Розгортання БД з нуля
 
 ```bash
-sqlcmd -Q "CREATE DATABASE EnrollmentsDb; CREATE DATABASE CatalogDb;"
+sqlcmd -Q "CREATE DATABASE EnrollmentsDb;"
 sqlcmd -d EnrollmentsDb -i db/p1/schema.sql
 sqlcmd -d EnrollmentsDb -i db/p1/procedures.sql
 sqlcmd -d EnrollmentsDb -i db/p1/seed.sql
-sqlcmd -d CatalogDb -i db/p2/schema.sql
-sqlcmd -d CatalogDb -i db/p2/seed.sql
+
+dotnet tool restore
+dotnet ef database update \
+    --project Services/Catalog/Catalog.Dal \
+    --startup-project Services/Catalog/Catalog.Api
 
 mongosh feedbackdb db/p3/collections.js
 mongosh feedbackdb db/p3/seed.js
 ```
 
-Повторний запуск `seed` не створює дублікатів (`IF NOT EXISTS` / `find-or-create`). ERD: `docs/erd-p1.svg`, `docs/erd-p2.svg` (джерела для dbdiagram.io: `docs/erd-p1.dbml`, `docs/erd-p2.dbml`).
+`CatalogDb` створюється міграцією `InitialCreate` з моделей EF Core. `db/p2/schema.sql` і `db/p2/seed.sql` - SQL-версія Лаб. 01, `db/p2/ef-initial.sql` - ідемпотентний скрипт, згенерований з міграції (`dotnet ef migrations script --idempotent`). Курси наповнюються `DbInitializer` під час старту API, довідники - через `HasData`.
+
+Повторний запуск `seed` не створює дублікатів (`IF NOT EXISTS` / `find-or-create` / перевірка наявності курсів). ERD: `docs/erd-p1.svg`, `docs/erd-p2.svg` (джерела для dbdiagram.io: `docs/erd-p1.dbml`, `docs/erd-p2.dbml`).
 
 ## Запуск сервісів (Aspire)
 
@@ -108,9 +119,9 @@ mongosh feedbackdb db/p3/seed.js
 dotnet run --project Platform.AppHost
 ```
 
-Dashboard показує ресурси (API + БД) у статусі Running. URL API - з Dashboard; Swagger - `<api-url>/swagger`.
+Dashboard показує ресурси (`enrollments-api`, `catalog-api` + БД) у статусі Running. URL API - з Dashboard; Swagger - `<api-url>/swagger`. Обидва сервіси читають рядки підключення з `Platform.AppHost/appsettings.json`.
 
-Залежності: `Api → Bll → Dal`, `Domain` - спільний. Рядок підключення - в `appsettings.json`, перевизначення - `ConnectionStrings__EnrollmentsDb=...`.
+Залежності: `Api → Bll → Dal`, `Domain` - спільний. Рядки підключення - в `appsettings.json`, перевизначення - `ConnectionStrings__CatalogDb=...` або `ConnectionStrings__EnrollmentsDb=...`. Сервіс Catalog застосовує міграції під час старту (прапорець `Catalog:MigrateAndSeed`), у Production це вимкнено.
 
 ## Приклади запитів (Enrollments)
 
@@ -130,6 +141,30 @@ curl <api-url>/api/courses/101
 
 Помилки - `ProblemDetails`: неіснуючий Id → `404`, недопустимий перехід статусу / брак місць → `409`, валідація → `400`.
 Самоперевірка: ім'я зі спецсимволом (`O'Brien`) не ламає SQL (параметризація); помилка в другому репозиторії транзакції відкочує перший.
+
+## Приклади запитів (Catalog)
+
+```bash
+curl '<catalog-api-url>/api/courses?page=1&pageSize=2'
+curl '<catalog-api-url>/api/courses?category=web&minPrice=1000&sortBy=price&sortDir=desc&page=1&pageSize=5'
+curl '<catalog-api-url>/api/courses/1'
+curl '<catalog-api-url>/api/courses/by-instructor/1'
+curl '<catalog-api-url>/api/categories/1'
+curl '<catalog-api-url>/api/categories/web/recent-courses?since=2026-01-01'
+
+curl -X POST '<catalog-api-url>/api/courses' \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"Новий курс","slug":"new-course","price":900,"instructorId":1,"syllabus":"Програма","durationHours":12,"categoryIds":[1]}'
+
+curl -X PUT '<catalog-api-url>/api/courses/1/price' \
+  -H 'Content-Type: application/json' -d '{"price":990}'
+
+curl -X DELETE '<catalog-api-url>/api/courses/1'
+```
+
+Пагінація повертає `items`, `totalCount`, `page`, `pageSize`, `totalPages`, `hasNext`, `hasPrevious`. Фільтри, сортування (дозволені поля: `title`, `price`, `createdAt`) і `Skip/Take` виконуються в SQL (`OFFSET ... FETCH`). Складні вибірки описані специфікаціями `CourseFilterSpec` і `CoursesByInstructorSpec`; репозиторій застосовує їх через `WithSpecification`. Валідація: DataAnnotations на DTO + FluentValidation в окремих класах. Логи Serilog містять `CorrelationId`, `RequestPath` і SQL-команди EF Core: eager-репозиторій виконує один запит, explicit - два.
+
+Виняток логує лише `ApiExceptionHandler` (один ERR-рядок зі стеком). `UseSerilogRequestLogging` стоїть зовні `UseExceptionHandler`, тому в підсумковому рядку статус відповідає коду відповіді (`404`, `409`), а не `500`. Вбудований лог `ExceptionHandlerMiddleware` вимкнено через `Serilog:MinimumLevel:Override` = `Fatal`.
 
 ## Розвиток (наступні лаби)
 
