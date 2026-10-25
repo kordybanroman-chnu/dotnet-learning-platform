@@ -102,6 +102,8 @@ mongosh feedbackdb db/p3/seed.js
 
 ## Запуск сервісів (Aspire)
 
+Перед першим запуском встановіть Aspire workload: `sudo dotnet workload install aspire`.
+
 ```bash
 dotnet run --project Platform.AppHost
 ```
@@ -121,7 +123,9 @@ curl <api-url>/api/enrollments/1
 
 curl -X POST <api-url>/api/enrollments/1/confirm
 
-curl '<api-url>/api/courses?category=programming&page=1&pageSize=20'
+curl <api-url>/api/courses
+
+curl <api-url>/api/courses/101
 ```
 
 Помилки - `ProblemDetails`: неіснуючий Id → `404`, недопустимий перехід статусу / брак місць → `409`, валідація → `400`.
