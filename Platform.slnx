@@ -11,5 +11,6 @@
   <Project Path="Services/Reviews/Reviews.Application/Reviews.Application.csproj" />
   <Project Path="Services/Reviews/Reviews.Infrastructure/Reviews.Infrastructure.csproj" />
   <Project Path="Services/Reviews/Reviews.WebApi/Reviews.WebApi.csproj" />
+  <Project Path="Services/Reviews/Reviews.Domain.Tests/Reviews.Domain.Tests.csproj" />
   <Project Path="Platform.AppHost/Platform.AppHost.csproj" />
 </Solution>
