@@ -176,12 +176,12 @@ curl -X DELETE '<catalog-api-url>/api/courses/1'
 
 ## Сервіс Reviews (Clean Architecture + CQRS)
 
-| Шар           | Проєкт                  | Залежить від                | Вміст                                                                                  |
-| ------------- | ----------------------- | --------------------------- | -------------------------------------------------------------------------------------- |
-| Domain        | `Reviews.Domain`        | нічого                      | `BaseEntity`, `ValueObject`, `Review`, `Comment`, `Author`, `Rating`, `IReviewRepository` |
-| Application   | `Reviews.Application`   | Domain                      | команди, запити, валідатори, behaviors, `IReviewQueries`, `ReviewProfile`                |
-| Infrastructure| `Reviews.Infrastructure`| Application, Domain         | `MongoDbContext`, `BsonClassMap`, `ReviewRepository`, `ReviewQueries`, сідинг та індекси |
-| WebApi        | `Reviews.WebApi`        | Application, Infrastructure | контролери, ProblemDetails, DI, Swagger                                                 |
+| Шар            | Проєкт                   | Залежить від                | Вміст                                                                                    |
+| -------------- | ------------------------ | --------------------------- | ---------------------------------------------------------------------------------------- |
+| Domain         | `Reviews.Domain`         | нічого                      | `BaseEntity`, `ValueObject`, `Review`, `Comment`, `Author`, `Rating`, `IReviewRepository` |
+| Application    | `Reviews.Application`    | Domain                      | команди, запити, валідатори, behaviors, `IReviewQueries`, `ReviewProfile`                |
+| Infrastructure | `Reviews.Infrastructure` | Application, Domain         | `MongoDbContext`, `BsonClassMap`, `ReviewRepository`, `ReviewQueries`, сідинг та індекси  |
+| WebApi         | `Reviews.WebApi`         | Application, Infrastructure | контролери, ProblemDetails, DI, Swagger                                                   |
 
 `Reviews.Domain` посилається лише на `MongoDB.Bson` (тип `ObjectId`), драйвера доступу до БД у ньому немає.
 
@@ -189,9 +189,9 @@ curl -X DELETE '<catalog-api-url>/api/courses/1'
 
 BSON-мапінг заданий у `MongoMappings` без атрибутів у домені: camelCase, `IgnoreExtraElements`, приватні поля `_photos`/`_comments`, `Rating` через власний `RatingBsonSerializer` (у документі лишається `int`), `Author` через конструктор. Оновлення документа виконується `ReplaceOne` з фільтром за поточною версією, видалення - `DeleteOne` з тим самим фільтром; розбіжність версій дає `409`. GET повертає `ETag` з версією, PUT приймає `If-Match` і відхиляє застарілу версію.
 
-Мапінг помилок: `NotFoundException` → `404`, `ValidationException` і `DomainException` → `400`, `ConflictException` і `MongoWriteException` з `DuplicateKey` → `409`, інші `MongoWriteException` → `400`, `MongoConnectionException` і таймаут вибору сервера → `503`. Тіло - `ProblemDetails`; у Development додається `exception`, у логах - `CorrelationId` і `RequestPath`.
+Мапінг помилок: `NotFoundException` → `404`, `ValidationException` і `DomainException` → `400`, `ConflictException` і `MongoWriteException` з `DuplicateKey` → `409`, інші `MongoWriteException` → `400`, `MongoConnectionException` і таймаут вибору сервера → `503`. Тіло - `ProblemDetails`; у Development додається `exception`, у логах - `CorrelationId` і `RequestPath`. `GET /health` виконує ping MongoDB через `MongoHealthCheck` і повертає `200 Healthy` або `503 Unhealthy`.
 
-Конфігурація - секція `MongoDb` (`ConnectionString`, `DatabaseName`), сідинг вмикається `Reviews:Seed` і не виконується в Production. Старт:
+Конфігурація - секція `MongoDb` (`ConnectionString`, `DatabaseName`). Development використовує `FeedbackDb`, Staging - `FeedbackDb_Staging`, Production - `FeedbackDb` з вимкненим сідингом (`Reviews:Seed = false`); рядок підключення перевизначається `ConnectionStrings__ReviewsMongo`. Старт:
 
 ```bash
 docker run -d --name feedback-mongo -p 27017:27017 mongo:7
@@ -216,7 +216,7 @@ curl -X PUT 'http://localhost:5084/api/reviews/<id>' \
 curl -X DELETE 'http://localhost:5084/api/reviews/<id>'
 ```
 
-Пагінація і фільтрація виконуються в MongoDB (`$match`, `$sort`, `$skip`, `$limit`, `$project`), `totalCount` рахує `countDocuments`. Сідинг ідемпотентний: повторний запуск не додає документів, а `db.reviews.getIndexes()` показує складені, text- та unique-індекси. Знімки: `docs/lab-04/swagger.png`, `docs/lab-04/pagination.png`, `docs/lab-04/validation-400.png`, `docs/lab-04/mongodb-document-indexes.png`.
+Пагінація і фільтрація виконуються в MongoDB (`$match`, `$sort`, `$skip`, `$limit`, `$project`), `totalCount` рахує `countDocuments`. Сідинг ідемпотентний: повторний запуск не додає документів, а `db.reviews.getIndexes()` показує складені, text- та unique-індекси. Доменні правила перевіряються `dotnet test Services/Reviews/Reviews.Domain.Tests` (5 тестів, зокрема `Rating = 10` кидає `DomainException` без БД). Знімки: `docs/lab-04/swagger.png`, `docs/lab-04/pagination.png`, `docs/lab-04/validation-400.png`, `docs/lab-04/mongodb-document-indexes.png`. Кроки для ручних скріншотів (Compass, лог валідації, `409`) описані в `docs/lab-04/manual-checks.md`.
 
 ## Розвиток (наступні лаби)
 
