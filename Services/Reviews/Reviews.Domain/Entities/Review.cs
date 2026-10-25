@@ -7,8 +7,8 @@ namespace Reviews.Domain.Entities;
 
 public sealed class Review : BaseEntity
 {
-    private readonly List<Comment> _comments = new();
-    private readonly List<string> _photos = new();
+    private List<Comment> _comments = new();
+    private List<string> _photos = new();
 
     public int CourseId { get; private set; }
     public string CourseTitle { get; private set; } = "";

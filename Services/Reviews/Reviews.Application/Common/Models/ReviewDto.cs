@@ -9,6 +9,7 @@ public sealed record ReviewDto(
     int Rating,
     string Text,
     IReadOnlyList<string> Photos,
+    IReadOnlyList<CommentDto> Comments,
     int CommentsCount,
     string? DiscussionId,
     int Version,

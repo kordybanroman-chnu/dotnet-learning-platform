@@ -23,6 +23,7 @@ public sealed class ReviewQueries(MongoDbContext context) : IReviewQueries
             new BsonDocument("$size",
                 new BsonDocument("$ifNull", new BsonArray { "$comments", new BsonArray() }))
         },
+        { "comments", new BsonDocument("$ifNull", new BsonArray { "$comments", new BsonArray() }) },
         { "discussionId", 1 },
         { "version", new BsonDocument("$ifNull", new BsonArray { "$version", 0 }) },
         {
@@ -91,6 +92,7 @@ public sealed class ReviewQueries(MongoDbContext context) : IReviewQueries
         document.GetValue("rating", 0).ToInt32(),
         document.GetValue("text", "").AsString,
         document["photos"].AsBsonArray.Select(photo => photo.AsString).ToList(),
+        ToComments(document["comments"].AsBsonArray),
         document.GetValue("commentsCount", 0).ToInt32(),
         document.TryGetValue("discussionId", out var discussionId) && discussionId.IsObjectId
             ? discussionId.AsObjectId.ToString()
@@ -100,4 +102,20 @@ public sealed class ReviewQueries(MongoDbContext context) : IReviewQueries
         document.TryGetValue("updatedAt", out var updatedAt) && updatedAt.IsValidDateTime
             ? updatedAt.ToUniversalTime()
             : null);
+
+    private static IReadOnlyList<CommentDto> ToComments(BsonArray comments)
+        => comments.Select(comment =>
+        {
+            var document = comment.AsBsonDocument;
+            return new CommentDto(
+                document.TryGetValue("_id", out var id) && id.IsObjectId
+                    ? id.AsObjectId.ToString()
+                    : null,
+                document.GetValue("author", "").AsString,
+                document.GetValue("text", "").AsString,
+                document.TryGetValue("createdAt", out var createdAt) && createdAt.IsValidDateTime
+                    ? createdAt.ToUniversalTime()
+                    : DateTime.UnixEpoch,
+                document.GetValue("version", 0).ToInt32());
+        }).ToList();
 }
