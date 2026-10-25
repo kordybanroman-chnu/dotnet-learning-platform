@@ -4,6 +4,10 @@ namespace Reviews.Domain.Common;
 
 public abstract class BaseEntity
 {
+    protected BaseEntity() { }
+
+    protected BaseEntity(DateTime createdAt) => CreatedAt = createdAt;
+
     public ObjectId Id { get; protected set; } = ObjectId.GenerateNewId();
     public DateTime CreatedAt { get; protected set; } = DateTime.UtcNow;
     public DateTime? UpdatedAt { get; protected set; }

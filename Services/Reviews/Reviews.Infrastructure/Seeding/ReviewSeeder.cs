@@ -24,6 +24,9 @@ public sealed class ReviewSeeder(MongoDbContext context) : IDataSeeder
                 "Корисно для переходу з SQL на документну модель.")
         };
 
+        reviews[0].AddComment("Андрій", "Згоден, приклади справді допомагають.");
+        reviews[0].AddPhoto("csharp-cover.png");
+
         await context.Reviews.InsertManyAsync(reviews, cancellationToken: ct);
     }
 }

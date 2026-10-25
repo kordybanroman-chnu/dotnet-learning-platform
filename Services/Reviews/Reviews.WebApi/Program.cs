@@ -1,6 +1,7 @@
 using Reviews.Application;
 using Reviews.Application.Reviews.Mapping;
 using Reviews.Infrastructure;
+using Reviews.Infrastructure.HealthChecks;
 using Reviews.Infrastructure.Seeding;
 using Reviews.WebApi;
 using Serilog;
@@ -25,6 +26,8 @@ builder.Services.AddAutoMapper(configuration =>
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddHealthChecks()
+    .AddCheck<MongoHealthCheck>("mongodb");
 builder.Services.AddProblemDetails(options =>
 {
     options.CustomizeProblemDetails = context =>
@@ -59,5 +62,6 @@ app.UseExceptionHandler();
 app.UseSwagger();
 app.UseSwaggerUI();
 app.MapControllers();
+app.MapHealthChecks("/health");
 
 app.Run();
