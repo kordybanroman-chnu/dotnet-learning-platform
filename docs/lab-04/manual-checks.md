@@ -1,6 +1,6 @@
 # Лаб. 04: ручна перевірка та скріншоти
 
-Автоматично зняті файли вже лежать у `docs/lab-04/`: `swagger.png`, `pagination.png`, `validation-400.png`, `mongodb-document-indexes.png`. Нижче кроки для трьох доказів, які треба зробити вручну: документ у Compass, лог валідації до обробника, відповідь `409`.
+Усі сім знімків лежать у `docs/lab-04/`: `swagger.png`, `pagination.png`, `validation-400.png`, `mongodb-document-indexes.png`, `compass-document.png`, `logs-validation.png`, `conflict-409.png`. Нижче команди, якими їх отримано, якщо треба повторити перевірку на іншій машині.
 
 ## Запуск
 

@@ -216,7 +216,7 @@ curl -X PUT 'http://localhost:5084/api/reviews/<id>' \
 curl -X DELETE 'http://localhost:5084/api/reviews/<id>'
 ```
 
-Пагінація і фільтрація виконуються в MongoDB (`$match`, `$sort`, `$skip`, `$limit`, `$project`), `totalCount` рахує `countDocuments`. Сідинг ідемпотентний: повторний запуск не додає документів, а `db.reviews.getIndexes()` показує складені, text- та unique-індекси. Доменні правила перевіряються `dotnet test Services/Reviews/Reviews.Domain.Tests` (5 тестів, зокрема `Rating = 10` кидає `DomainException` без БД). Знімки: `docs/lab-04/swagger.png`, `docs/lab-04/pagination.png`, `docs/lab-04/validation-400.png`, `docs/lab-04/mongodb-document-indexes.png`. Кроки для ручних скріншотів (Compass, лог валідації, `409`) описані в `docs/lab-04/manual-checks.md`.
+Пагінація і фільтрація виконуються в MongoDB (`$match`, `$sort`, `$skip`, `$limit`, `$project`), `totalCount` рахує `countDocuments`. Сідинг ідемпотентний: повторний запуск не додає документів, а `db.reviews.getIndexes()` показує складені, text- та unique-індекси. Доменні правила перевіряються `dotnet test Services/Reviews/Reviews.Domain.Tests` (5 тестів, зокрема `Rating = 10` кидає `DomainException` без БД). Знімки: `docs/lab-04/swagger.png`, `docs/lab-04/pagination.png`, `docs/lab-04/validation-400.png`, `docs/lab-04/mongodb-document-indexes.png`, `docs/lab-04/compass-document.png`, `docs/lab-04/logs-validation.png`, `docs/lab-04/conflict-409.png`. Команди для повторного зняття описані в `docs/lab-04/manual-checks.md`.
 
 ## Розвиток (наступні лаби)
 
