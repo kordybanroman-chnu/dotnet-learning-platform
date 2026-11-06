@@ -15,7 +15,9 @@ public static class DependencyInjection
 
         services.AddMediatR(config =>
         {
-            config.LicenseKey = configuration["LuckyPenny:LicenseKey"];
+            var licenseKey = configuration["LuckyPenny:LicenseKey"];
+            if (!string.IsNullOrWhiteSpace(licenseKey))
+                config.LicenseKey = licenseKey;
             config.RegisterServicesFromAssembly(assembly);
             config.AddOpenBehavior(typeof(LoggingBehavior<,>));
             config.AddOpenBehavior(typeof(ValidationBehavior<,>));

@@ -185,7 +185,7 @@ curl -X DELETE '<catalog-api-url>/api/courses/101'
 
 Пагінація повертає `items`, `totalCount`, `page`, `pageSize`, `totalPages`, `hasNext`, `hasPrevious`. Фільтри, сортування (дозволені поля: `title`, `price`, `createdAt`) і `Skip/Take` виконуються в SQL (`OFFSET ... FETCH`). Складні вибірки описані специфікаціями `CourseFilterSpec` і `CoursesByInstructorSpec`; репозиторій застосовує їх через `WithSpecification`. Валідація: DataAnnotations на DTO + FluentValidation в окремих класах. Логи Serilog містять `CorrelationId`, `RequestPath` і SQL-команди EF Core: eager-репозиторій виконує один запит, explicit - два.
 
-Виняток логує лише `ApiExceptionHandler` (один ERR-рядок зі стеком). `UseSerilogRequestLogging` стоїть зовні `UseExceptionHandler`, тому в підсумковому рядку статус відповідає коду відповіді (`404`, `409`), а не `500`. Вбудований лог `ExceptionHandlerMiddleware` вимкнено через `Serilog:MinimumLevel:Override` = `Fatal`.
+Виняток логує лише `ApiExceptionHandler` (один ERR-рядок зі стеком). `CorrelationIdMiddleware` стоїть зовні `UseExceptionHandler`, тому підсумковий рядок запиту містить реальний статус відповіді (`404`, `409`), а не `500`. Вбудований лог `ExceptionHandlerMiddleware` вимкнено через `MinimumLevel.Override` у `Platform.ServiceDefaults`, щоб виняток не дублювався.
 
 ## Сервіс Reviews (Clean Architecture + CQRS)
 
