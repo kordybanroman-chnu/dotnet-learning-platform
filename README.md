@@ -204,7 +204,7 @@ BSON-мапінг заданий у `MongoMappings` без атрибутів у
 
 Мапінг помилок: `NotFoundException` → `404`, `ValidationException` і `DomainException` → `400`, `ConflictException` і `MongoWriteException` з `DuplicateKey` → `409`, інші `MongoWriteException` → `400`, `MongoConnectionException` і таймаут вибору сервера → `503`. Тіло - `ProblemDetails`; у Development додається `exception`, у логах - `CorrelationId` і `RequestPath`. `GET /health` виконує ping MongoDB через `MongoHealthCheck` і повертає `200 Healthy` або `503 Unhealthy`.
 
-Конфігурація - секція `MongoDb` (`ConnectionString`, `DatabaseName`). Development використовує `FeedbackDb`, Staging - `FeedbackDb_Staging`, Production - `FeedbackDb` з вимкненим сідингом (`Reviews:Seed = false`); рядок підключення перевизначається `ConnectionStrings__ReviewsMongo`. Старт:
+Конфігурація - секція `MongoDb` (`ConnectionString`, `DatabaseName`). `ReviewsMongo` в AppHost - ім'я ресурсу й connection string; фактична назва бази задається `MongoDb:DatabaseName`. Development використовує `FeedbackDb`, Staging - `FeedbackDb_Staging`, Production - `FeedbackDb` з вимкненим сідингом (`Reviews:Seed = false`); рядок підключення перевизначається `ConnectionStrings__ReviewsMongo`. Старт:
 
 ```bash
 docker run -d --name feedback-mongo -p 27017:27017 mongo:7
@@ -244,9 +244,9 @@ curl -i 'http://localhost:5000/api/reviews?courseId=101'
 curl -i 'http://localhost:5000/api/aggregator/enrollments/1/full'
 ```
 
-Зупиніть `reviews-api` у Dashboard і повторіть останній запит: `warnings` міститиме `reviews-api is unavailable`, поля `enrollment` і `courses` залишаться заповненими. Прямий запит до `<reviews-api-url>/api/reviews` в обхід Gateway не має `X-Correlation-Id`; через Gateway заголовок присутній.
+Зупиніть `reviews-api` у Dashboard і повторіть останній запит: `warnings` міститиме `reviews-api is unavailable`, поля `enrollment` і `courses` залишаться заповненими. Прямий запит до `<reviews-api-url>/api/reviews` в обхід Gateway не містить `X-Correlation-Id` на вході; сервіс згенерує власний id і поверне його у відповіді. Через Gateway клієнтський id зберігається в усьому ланцюжку.
 
-`ServiceDefaults` підключає Serilog (`CompactJsonFormatter`, enrichers `ServiceName`, `Environment`, `MachineName`, `ThreadId`, `TraceId`, `SpanId`), OpenTelemetry для ASP.NET Core, `HttpClient`, `SqlClient` і MongoDB, а також `CorrelationIdMiddleware` та `CorrelationIdHandler`. Логи, трасування й метрики всіх сервісів видно в Aspire Dashboard: пошук за `CorrelationId` показує ланцюжок Gateway → Aggregator → сервіси → БД. Знімки: `docs/lab-05/dashboard-resources.png`, `docs/lab-05/trace-aggregator.png`, `docs/lab-05/structured-logs-correlation.png`; команди перевірки - `docs/lab-05/manual-checks.md`.
+`ServiceDefaults` підключає Serilog (`CompactJsonFormatter`, enrichers `ServiceName`, `EnvironmentName`, `MachineName`, `ThreadId`, `TraceId`, `SpanId`), OpenTelemetry для ASP.NET Core, `HttpClient`, `SqlClient` і MongoDB, а також `CorrelationIdMiddleware` та `CorrelationIdHandler`. Логи, трасування й метрики всіх сервісів видно в Aspire Dashboard: пошук за `CorrelationId` показує ланцюжок Gateway → Aggregator → сервіси → БД. Знімки: `docs/lab-05/dashboard-resources.png`, `docs/lab-05/trace-aggregator.png`, `docs/lab-05/structured-logs-correlation.png`; команди перевірки - `docs/lab-05/manual-checks.md`.
 
 ## Розвиток (наступні лаби)
 
