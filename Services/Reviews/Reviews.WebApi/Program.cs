@@ -3,15 +3,12 @@ using Reviews.Application.Reviews.Mapping;
 using Reviews.Infrastructure;
 using Reviews.Infrastructure.HealthChecks;
 using Reviews.Infrastructure.Seeding;
+using Platform.ServiceDefaults;
 using Reviews.WebApi;
-using Serilog;
-using Serilog.Context;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Host.UseSerilog((context, configuration) => configuration
-    .ReadFrom.Configuration(context.Configuration)
-    .Enrich.FromLogContext());
+builder.AddServiceDefaults();
 
 builder.Services
     .AddApplication(builder.Configuration)
@@ -19,7 +16,9 @@ builder.Services
 
 builder.Services.AddAutoMapper(configuration =>
 {
-    configuration.LicenseKey = builder.Configuration["LuckyPenny:LicenseKey"];
+    var licenseKey = builder.Configuration["LuckyPenny:LicenseKey"];
+    if (!string.IsNullOrWhiteSpace(licenseKey))
+        configuration.LicenseKey = licenseKey;
     configuration.AddMaps(typeof(ReviewProfile).Assembly);
 });
 
@@ -49,19 +48,11 @@ if (app.Configuration.GetValue("Reviews:Seed", true) && !app.Environment.IsProdu
     await seeder.SeedAsync();
 }
 
-app.Use(async (context, next) =>
-{
-    using (LogContext.PushProperty("CorrelationId", context.TraceIdentifier))
-    using (LogContext.PushProperty("RequestPath", context.Request.Path))
-    {
-        await next();
-    }
-});
-app.UseSerilogRequestLogging();
+app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseExceptionHandler();
 app.UseSwagger();
 app.UseSwaggerUI();
 app.MapControllers();
-app.MapHealthChecks("/health");
+app.MapDefaultEndpoints();
 
 app.Run();

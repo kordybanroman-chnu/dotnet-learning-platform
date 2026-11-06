@@ -1,9 +1,11 @@
+using System.Diagnostics;
 using AutoMapper;
 using Catalog.Bll.Specifications;
 using Catalog.Dal;
 using Catalog.Domain;
 using FluentValidation;
 using FluentValidation.Results;
+using Microsoft.Extensions.Logging;
 
 namespace Catalog.Bll;
 
@@ -19,8 +21,10 @@ public interface ICourseService
     Task DeleteAsync(long id, CancellationToken ct = default);
 }
 
-public sealed class CourseService(IUnitOfWork uow, IMapper mapper) : ICourseService
+public sealed class CourseService(IUnitOfWork uow, IMapper mapper, ILogger<CourseService> logger) : ICourseService
 {
+    private static readonly ActivitySource ActivitySource = new("Catalog.Api");
+
     public async Task<PagedResult<CourseListItemDto>> GetListAsync(
         CourseQuery query, CancellationToken ct = default)
     {
@@ -57,6 +61,9 @@ public sealed class CourseService(IUnitOfWork uow, IMapper mapper) : ICourseServ
 
     public async Task<CourseDto> CreateAsync(CreateCourseDto input, CancellationToken ct = default)
     {
+        using var activity = ActivitySource.StartActivity("CreateCourse");
+        activity?.SetTag("course.slug", input.Slug);
+
         if (await uow.Courses.ExistsBySlugAsync(input.Slug, ct))
             throw new ConflictException($"Course with slug '{input.Slug}' already exists");
 
@@ -93,22 +100,37 @@ public sealed class CourseService(IUnitOfWork uow, IMapper mapper) : ICourseServ
         await uow.Courses.AddAsync(course, ct);
         await uow.SaveChangesAsync(ct);
 
+        activity?.SetTag("course.id", course.Id);
+        logger.LogInformation("Created course {CourseId} {Slug} with price {Price}",
+            course.Id, course.Slug, course.Price);
+
         return await GetByIdAsync(course.Id, ct);
     }
 
     public async Task UpdatePriceAsync(long id, decimal price, CancellationToken ct = default)
     {
+        using var activity = ActivitySource.StartActivity("UpdateCoursePrice");
+        activity?.SetTag("course.id", id);
+        activity?.SetTag("course.price", price);
+
         var course = await uow.Courses.GetByIdAsync(id, ct)
             ?? throw new NotFoundException($"Course {id} not found");
         course.ChangePrice(price);
         await uow.SaveChangesAsync(ct);
+
+        logger.LogInformation("Updated course {CourseId} price to {Price}", id, price);
     }
 
     public async Task DeleteAsync(long id, CancellationToken ct = default)
     {
+        using var activity = ActivitySource.StartActivity("DeleteCourse");
+        activity?.SetTag("course.id", id);
+
         var course = await uow.Courses.GetByIdAsync(id, ct)
             ?? throw new NotFoundException($"Course {id} not found");
         uow.Courses.Delete(course);
         await uow.SaveChangesAsync(ct);
+
+        logger.LogInformation("Deleted course {CourseId}", id);
     }
 }

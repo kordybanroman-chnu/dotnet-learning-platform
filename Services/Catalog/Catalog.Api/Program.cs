@@ -4,14 +4,11 @@ using Catalog.Bll.Validators;
 using Catalog.Dal;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
-using Serilog;
-using Serilog.Context;
+using Platform.ServiceDefaults;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Host.UseSerilog((context, configuration) => configuration
-    .ReadFrom.Configuration(context.Configuration)
-    .Enrich.FromLogContext());
+builder.AddServiceDefaults();
 
 var connectionString = builder.Configuration.GetConnectionString("CatalogDb")
     ?? throw new InvalidOperationException("Connection string 'CatalogDb' is missing");
@@ -24,7 +21,9 @@ builder.Services.AddScoped<ICourseService, CourseService>();
 builder.Services.AddScoped<ICategoryService, CategoryService>();
 builder.Services.AddAutoMapper(configuration =>
 {
-    configuration.LicenseKey = builder.Configuration["AutoMapper:LicenseKey"];
+    var licenseKey = builder.Configuration["AutoMapper:LicenseKey"];
+    if (!string.IsNullOrWhiteSpace(licenseKey))
+        configuration.LicenseKey = licenseKey;
     configuration.AddProfile<CourseProfile>();
 });
 builder.Services.AddValidatorsFromAssemblyContaining<CreateCourseDtoValidator>();
@@ -53,18 +52,11 @@ if (app.Configuration.GetValue("Catalog:MigrateAndSeed", true) && !app.Environme
     await DbInitializer.SeedAsync(db);
 }
 
-app.Use(async (context, next) =>
-{
-    using (LogContext.PushProperty("CorrelationId", context.TraceIdentifier))
-    using (LogContext.PushProperty("RequestPath", context.Request.Path))
-    {
-        await next();
-    }
-});
-app.UseSerilogRequestLogging();
+app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseExceptionHandler();
 app.UseSwagger();
 app.UseSwaggerUI();
 app.MapControllers();
+app.MapDefaultEndpoints();
 
 app.Run();

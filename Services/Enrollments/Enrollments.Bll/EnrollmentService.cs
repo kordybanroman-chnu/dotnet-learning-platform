@@ -1,4 +1,5 @@
 using System.Data;
+using System.Diagnostics;
 using AutoMapper;
 using Enrollments.Dal;
 using Enrollments.Domain;
@@ -17,8 +18,13 @@ public interface IEnrollmentService
 
 public sealed class EnrollmentService(IUnitOfWork uow, IMapper mapper, ILogger<EnrollmentService> logger) : IEnrollmentService
 {
+    private static readonly ActivitySource ActivitySource = new("Enrollments.Api");
+
     public async Task<EnrollmentDto> CreateAsync(CreateEnrollmentDto input, CancellationToken ct = default)
     {
+        using var activity = ActivitySource.StartActivity("CreateEnrollment");
+        activity?.SetTag("student.id", input.StudentId);
+
         foreach (var item in input.Items)
             if (item.Units <= 0)
                 throw new ValidationException("Units must be positive");
@@ -38,6 +44,7 @@ public sealed class EnrollmentService(IUnitOfWork uow, IMapper mapper, ILogger<E
                 await uow.Enrollments.AddItemAsync(id, item.CourseId, item.Units, ct);
             }
             await uow.CommitAsync(ct);
+            activity?.SetTag("enrollment.id", id);
             logger.LogInformation("Created enrollment {EnrollmentId} for student {StudentId}", id, input.StudentId);
             var created = await uow.Enrollments.GetWithItemsAsync(id, ct)
                 ?? throw new NotFoundException($"Enrollment {id} not found");
@@ -65,6 +72,9 @@ public sealed class EnrollmentService(IUnitOfWork uow, IMapper mapper, ILogger<E
 
     public async Task ConfirmAsync(long id, CancellationToken ct = default)
     {
+        using var activity = ActivitySource.StartActivity("ConfirmEnrollment");
+        activity?.SetTag("enrollment.id", id);
+
         await uow.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
         try
         {
