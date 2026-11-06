@@ -35,7 +35,10 @@
 │   ├── p2/
 │   └── p3/
 ├── Platform.slnx
-├── Platform.AppHost/
+├── Platform.AppHost/                 оркестрація Aspire: контейнери SQL Server і MongoDB, сервіси
+├── Platform.ServiceDefaults/         Serilog, OpenTelemetry, CorrelationId, health checks
+├── Platform.ApiGateway/              YARP-шлюз на порту 5000
+├── Platform.Aggregator/              typed HttpClients і агрегація картки запису
 ├── Services/
 │   ├── Enrollments/
 │   │   ├── Enrollments.Api/
@@ -119,17 +122,27 @@ dotnet run --project Services/Reviews/Reviews.WebApi
 
 Повторний запуск `seed` не створює дублікатів (`IF NOT EXISTS` / `find-or-create` / перевірка наявності курсів). ERD: `docs/erd-p1.svg`, `docs/erd-p2.svg` (джерела для dbdiagram.io: `docs/erd-p1.dbml`, `docs/erd-p2.dbml`).
 
-## Запуск сервісів (Aspire)
+## Запуск платформи (Aspire)
 
-Перед першим запуском встановіть Aspire workload: `sudo dotnet workload install aspire`.
+Потрібні Docker і .NET 9 SDK. Aspire AppHost підключається як NuGet-пакет, окремий workload не потрібен.
 
 ```bash
+dotnet user-secrets set "Parameters:sql-password" "Pass@word1" --project Platform.AppHost
 dotnet run --project Platform.AppHost
 ```
 
-Dashboard показує ресурси (`enrollments-api`, `catalog-api`, `reviews-api` + БД) у статусі Running. URL API - з Dashboard; Swagger - `<api-url>/swagger`. Сервіси читають рядки підключення з `Platform.AppHost/appsettings.json`; для `reviews-api` потрібен запущений MongoDB на `localhost:27017`.
+`AppHost` створює контейнери SQL Server і MongoDB з іменованими volume (`WithDataVolume`), тому дані переживають перезапуск. Порядок запуску заданий `WaitFor`: БД → `enrollments-api`, `catalog-api`, `reviews-api` → `aggregator` → `gateway`. Gateway слухає `http://localhost:5000`; посилання на Dashboard з токеном друкується в консолі.
 
-Залежності: `Api → Bll → Dal`, `Domain` - спільний; у Reviews напрямок `WebApi → Application → Domain`, `Infrastructure → Application/Domain`. Рядки підключення - в `appsettings.json`, перевизначення - `ConnectionStrings__CatalogDb=...`, `ConnectionStrings__EnrollmentsDb=...`, `ConnectionStrings__ReviewsMongo=...`. Сервіс Catalog застосовує міграції під час старту (прапорець `Catalog:MigrateAndSeed`), у Production це вимкнено.
+`CatalogDb` створюється міграцією `InitialCreate`, Catalog і Reviews наповнюють свої колекції під час старту. `EnrollmentsDb` створює Aspire, а таблиці треба застосувати один раз:
+
+```bash
+docker ps --filter name=sql- --format '{{.Names}}'
+docker exec -i <sql-container> /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Pass@word1' -C -d EnrollmentsDb < db/p1/schema.sql
+docker exec -i <sql-container> /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Pass@word1' -C -d EnrollmentsDb < db/p1/procedures.sql
+docker exec -i <sql-container> /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Pass@word1' -C -d EnrollmentsDb < db/p1/seed.sql
+```
+
+Залежності: `Api → Bll → Dal`, `Domain` - спільний; у Reviews напрямок `WebApi → Application → Domain`, `Infrastructure → Application/Domain`. Усі сервіси, Gateway і Aggregator посилаються лише на `Platform.ServiceDefaults`; `AppHost` посилається на них. Рядки підключення передає Aspire через `ConnectionStrings__EnrollmentsDb`, `ConnectionStrings__CatalogDb`, `ConnectionStrings__ReviewsMongo`; резервні значення для запуску без AppHost лежать в `appsettings.json`. Catalog застосовує міграції під час старту (прапорець `Catalog:MigrateAndSeed`), у Production це вимкнено.
 
 ## Приклади запитів (Enrollments)
 
@@ -217,6 +230,23 @@ curl -X DELETE 'http://localhost:5084/api/reviews/<id>'
 ```
 
 Пагінація і фільтрація виконуються в MongoDB (`$match`, `$sort`, `$skip`, `$limit`, `$project`), `totalCount` рахує `countDocuments`. Сідинг ідемпотентний: повторний запуск не додає документів, а `db.reviews.getIndexes()` показує складені, text- та unique-індекси. Доменні правила перевіряються `dotnet test Services/Reviews/Reviews.Domain.Tests` (5 тестів, зокрема `Rating = 10` кидає `DomainException` без БД). Знімки: `docs/lab-04/swagger.png`, `docs/lab-04/pagination.png`, `docs/lab-04/validation-400.png`, `docs/lab-04/mongodb-document-indexes.png`, `docs/lab-04/compass-document.png`, `docs/lab-04/logs-validation.png`, `docs/lab-04/conflict-409.png`. Команди для повторного зняття описані в `docs/lab-04/manual-checks.md`.
+
+## API Gateway і Aggregator (Лаб. 05)
+
+`Platform.ApiGateway` маршрутизує запити за catch-all правилами YARP. Адреси кластерів записані логічними іменами (`http://enrollments-api`, `http://catalog-api`, `http://reviews-api`, `http://aggregator`), фізичні порти підставляє service discovery Aspire. Маршрут Aggregator має `Order: 1`, решта - `Order: 2`. Gateway генерує `X-Correlation-Id`, якщо клієнт його не надіслав, повертає заголовок у відповіді та логує метод, шлях, маршрут, статус і тривалість.
+
+`Platform.Aggregator` збирає картку запису на курс: запис з Enrollments, актуальні дані курсів з Catalog і відгуки з Reviews. Виклики Catalog і Reviews виконуються паралельно через `Task.WhenAll`; спільний `CancellationToken` передається в усі запити. Якщо сервіс недоступний, відповідь містить доступні дані й `warnings`, а не `500`.
+
+```bash
+curl -i 'http://localhost:5000/api/enrollments/1'
+curl -i 'http://localhost:5000/api/courses?page=1'
+curl -i 'http://localhost:5000/api/reviews?courseId=101'
+curl -i 'http://localhost:5000/api/aggregator/enrollments/1/full'
+```
+
+Зупиніть `reviews-api` у Dashboard і повторіть останній запит: `warnings` міститиме `reviews-api is unavailable`, поля `enrollment` і `courses` залишаться заповненими. Прямий запит до `<reviews-api-url>/api/reviews` в обхід Gateway не має `X-Correlation-Id`; через Gateway заголовок присутній.
+
+`ServiceDefaults` підключає Serilog (`CompactJsonFormatter`, enrichers `ServiceName`, `Environment`, `MachineName`, `ThreadId`, `TraceId`, `SpanId`), OpenTelemetry для ASP.NET Core, `HttpClient`, `SqlClient` і MongoDB, а також `CorrelationIdMiddleware` та `CorrelationIdHandler`. Логи, трасування й метрики всіх сервісів видно в Aspire Dashboard: пошук за `CorrelationId` показує ланцюжок Gateway → Aggregator → сервіси → БД. Знімки: `docs/lab-05/dashboard-resources.png`, `docs/lab-05/trace-aggregator.png`, `docs/lab-05/structured-logs-correlation.png`; команди перевірки - `docs/lab-05/manual-checks.md`.
 
 ## Розвиток (наступні лаби)
 
