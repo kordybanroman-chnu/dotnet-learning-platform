@@ -10,6 +10,8 @@ public static class DbInitializer
         if (await db.Courses.AnyAsync(ct))
             return;
 
+        await db.Database.ExecuteSqlRawAsync("DBCC CHECKIDENT ('Courses', RESEED, 101)", ct);
+
         var csharp = CreateCourse("csharp-basics", "Основи C#", 1200m, 1,
             "Синтаксис, ООП, LINQ та робота з колекціями.", 20, new long[] { 1 },
             "/img/csharp-basics.jpg");
