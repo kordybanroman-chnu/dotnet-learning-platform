@@ -168,7 +168,7 @@ curl <api-url>/api/courses/101
 ```bash
 curl '<catalog-api-url>/api/courses?page=1&pageSize=2'
 curl '<catalog-api-url>/api/courses?category=web&minPrice=1000&sortBy=price&sortDir=desc&page=1&pageSize=5'
-curl '<catalog-api-url>/api/courses/1'
+curl '<catalog-api-url>/api/courses/101'
 curl '<catalog-api-url>/api/courses/by-instructor/1'
 curl '<catalog-api-url>/api/categories/1'
 curl '<catalog-api-url>/api/categories/web/recent-courses?since=2026-01-01'
@@ -177,10 +177,10 @@ curl -X POST '<catalog-api-url>/api/courses' \
   -H 'Content-Type: application/json' \
   -d '{"title":"Новий курс","slug":"new-course","price":900,"instructorId":1,"syllabus":"Програма","durationHours":12,"categoryIds":[1]}'
 
-curl -X PUT '<catalog-api-url>/api/courses/1/price' \
+curl -X PUT '<catalog-api-url>/api/courses/101/price' \
   -H 'Content-Type: application/json' -d '{"price":990}'
 
-curl -X DELETE '<catalog-api-url>/api/courses/1'
+curl -X DELETE '<catalog-api-url>/api/courses/101'
 ```
 
 Пагінація повертає `items`, `totalCount`, `page`, `pageSize`, `totalPages`, `hasNext`, `hasPrevious`. Фільтри, сортування (дозволені поля: `title`, `price`, `createdAt`) і `Skip/Take` виконуються в SQL (`OFFSET ... FETCH`). Складні вибірки описані специфікаціями `CourseFilterSpec` і `CoursesByInstructorSpec`; репозиторій застосовує їх через `WithSpecification`. Валідація: DataAnnotations на DTO + FluentValidation в окремих класах. Логи Serilog містять `CorrelationId`, `RequestPath` і SQL-команди EF Core: eager-репозиторій виконує один запит, explicit - два.
@@ -220,7 +220,7 @@ curl 'http://localhost:5084/api/reviews/<id>'
 
 curl -X POST 'http://localhost:5084/api/reviews' \
   -H 'Content-Type: application/json' \
-  -d '{"courseId":102,"courseTitle":"Архітектура ПЗ","authorId":"7","authorName":"Ірина","rating":5,"text":"Найкращий курс на потоці."}'
+  -d '{"courseId":102,"courseTitle":"ASP.NET Core API","authorId":"7","authorName":"Ірина","rating":5,"text":"Найкращий курс на потоці."}'
 
 curl -X PUT 'http://localhost:5084/api/reviews/<id>' \
   -H 'Content-Type: application/json' -H 'If-Match: "0"' \
