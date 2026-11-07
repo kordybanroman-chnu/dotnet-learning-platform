@@ -6,6 +6,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Protobuf Include="Protos\enrollments.proto" GrpcServices="Server" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Grpc.AspNetCore" Version="2.71.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="10.3.0" />
   </ItemGroup>
 

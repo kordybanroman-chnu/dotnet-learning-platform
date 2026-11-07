@@ -1,5 +1,7 @@
 using Catalog.Api;
+using Catalog.Api.Grpc;
 using Catalog.Bll;
+using Catalog.Bll.Caching;
 using Catalog.Bll.Validators;
 using Catalog.Dal;
 using FluentValidation;
@@ -9,6 +11,11 @@ using Platform.ServiceDefaults;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
+builder.AddRedisDistributedCache("redis");
+builder.Services.AddMemoryCache(options => options.SizeLimit = 10_000);
+builder.Services.AddSingleton<CacheMetrics>();
+builder.Services.AddScoped<ICatalogCache, TwoLevelCache>();
+builder.Services.AddGrpc(options => options.Interceptors.Add<GrpcLoggingInterceptor>());
 
 var connectionString = builder.Configuration.GetConnectionString("CatalogDb")
     ?? throw new InvalidOperationException("Connection string 'CatalogDb' is missing");
@@ -57,6 +64,7 @@ app.UseExceptionHandler();
 app.UseSwagger();
 app.UseSwaggerUI();
 app.MapControllers();
+app.MapGrpcService<CatalogGrpcService>();
 app.MapDefaultEndpoints();
 
 app.Run();

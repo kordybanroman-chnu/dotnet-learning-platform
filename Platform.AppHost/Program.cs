@@ -11,13 +11,18 @@ var mongo = builder.AddMongoDB("mongo")
     .WithDataVolume();
 var reviewsDb = mongo.AddDatabase("ReviewsMongo");
 
+var redis = builder.AddRedis("redis")
+    .WithDataVolume();
+
 var enrollments = builder.AddProject<Projects.Enrollments_Api>("enrollments-api")
     .WithReference(enrollmentsDb)
     .WaitFor(enrollmentsDb);
 
 var catalog = builder.AddProject<Projects.Catalog_Api>("catalog-api")
     .WithReference(catalogDb)
-    .WaitFor(catalogDb);
+    .WaitFor(catalogDb)
+    .WithReference(redis)
+    .WaitFor(redis);
 
 var reviews = builder.AddProject<Projects.Reviews_WebApi>("reviews-api")
     .WithReference(reviewsDb)
@@ -27,9 +32,11 @@ var aggregator = builder.AddProject<Projects.Platform_Aggregator>("aggregator")
     .WithReference(enrollments)
     .WithReference(catalog)
     .WithReference(reviews)
+    .WithReference(redis)
     .WaitFor(enrollments)
     .WaitFor(catalog)
-    .WaitFor(reviews);
+    .WaitFor(reviews)
+    .WaitFor(redis);
 
 builder.AddProject<Projects.Platform_ApiGateway>("gateway")
     .WithHttpEndpoint(port: 5000, name: "public")

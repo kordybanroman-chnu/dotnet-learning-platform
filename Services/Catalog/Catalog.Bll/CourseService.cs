@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using AutoMapper;
+using Catalog.Bll.Caching;
 using Catalog.Bll.Specifications;
 using Catalog.Dal;
 using Catalog.Domain;
@@ -21,7 +22,11 @@ public interface ICourseService
     Task DeleteAsync(long id, CancellationToken ct = default);
 }
 
-public sealed class CourseService(IUnitOfWork uow, IMapper mapper, ILogger<CourseService> logger) : ICourseService
+public sealed class CourseService(
+    IUnitOfWork uow,
+    IMapper mapper,
+    ICatalogCache cache,
+    ILogger<CourseService> logger) : ICourseService
 {
     private static readonly ActivitySource ActivitySource = new("Catalog.Api");
 
@@ -38,19 +43,28 @@ public sealed class CourseService(IUnitOfWork uow, IMapper mapper, ILogger<Cours
             mapper.Map<IReadOnlyList<CourseListItemDto>>(items), total, page, pageSize);
     }
 
-    public async Task<CourseDto> GetByIdAsync(long id, CancellationToken ct = default)
-    {
-        var course = await uow.Courses.GetWithDetailsAsync(id, ct)
-            ?? throw new NotFoundException($"Course {id} not found");
-        return mapper.Map<CourseDto>(course);
-    }
+    public Task<CourseDto> GetByIdAsync(long id, CancellationToken ct = default)
+        => cache.GetOrCreateAsync(
+            CacheKeys.Course(id),
+            async () =>
+            {
+                var course = await uow.Courses.GetWithDetailsAsync(id, ct)
+                    ?? throw new NotFoundException($"Course {id} not found");
+                return mapper.Map<CourseDto>(course);
+            },
+            TimeSpan.FromMinutes(1),
+            TimeSpan.FromMinutes(10),
+            ct);
 
-    public async Task<IReadOnlyList<CourseListItemDto>> GetByInstructorAsync(
+    public Task<IReadOnlyList<CourseListItemDto>> GetByInstructorAsync(
         long instructorId, CancellationToken ct = default)
-    {
-        var courses = await uow.Courses.ListAsync(new CoursesByInstructorSpec(instructorId), ct);
-        return mapper.Map<IReadOnlyList<CourseListItemDto>>(courses);
-    }
+        => cache.GetOrCreateAsync(
+            CacheKeys.InstructorCourses(instructorId),
+            async () => mapper.Map<IReadOnlyList<CourseListItemDto>>(
+                await uow.Courses.ListAsync(new CoursesByInstructorSpec(instructorId), ct)),
+            TimeSpan.FromMinutes(1),
+            TimeSpan.FromMinutes(5),
+            ct);
 
     public async Task<IReadOnlyList<CourseShortDto>> GetRecentlyAddedAsync(
         string categorySlug, DateTime since, CancellationToken ct = default)
@@ -104,6 +118,9 @@ public sealed class CourseService(IUnitOfWork uow, IMapper mapper, ILogger<Cours
         logger.LogInformation("Created course {CourseId} {Slug} with price {Price}",
             course.Id, course.Slug, course.Price);
 
+        await cache.InvalidateAsync(
+            CacheKeys.InstructorCourses(course.InstructorId), "CourseCreated", ct);
+
         return await GetByIdAsync(course.Id, ct);
     }
 
@@ -118,6 +135,10 @@ public sealed class CourseService(IUnitOfWork uow, IMapper mapper, ILogger<Cours
         course.ChangePrice(price);
         await uow.SaveChangesAsync(ct);
 
+        await cache.InvalidateAsync(CacheKeys.Course(id), "CoursePriceUpdated", ct);
+        await cache.InvalidateAsync(
+            CacheKeys.InstructorCourses(course.InstructorId), "CoursePriceUpdated", ct);
+
         logger.LogInformation("Updated course {CourseId} price to {Price}", id, price);
     }
 
@@ -130,6 +151,10 @@ public sealed class CourseService(IUnitOfWork uow, IMapper mapper, ILogger<Cours
             ?? throw new NotFoundException($"Course {id} not found");
         uow.Courses.Delete(course);
         await uow.SaveChangesAsync(ct);
+
+        await cache.InvalidateAsync(CacheKeys.Course(id), "CourseDeleted", ct);
+        await cache.InvalidateAsync(
+            CacheKeys.InstructorCourses(course.InstructorId), "CourseDeleted", ct);
 
         logger.LogInformation("Deleted course {CourseId}", id);
     }

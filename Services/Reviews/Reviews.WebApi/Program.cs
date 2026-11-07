@@ -5,10 +5,12 @@ using Reviews.Infrastructure.HealthChecks;
 using Reviews.Infrastructure.Seeding;
 using Platform.ServiceDefaults;
 using Reviews.WebApi;
+using Reviews.WebApi.Grpc;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
+builder.Services.AddGrpc(options => options.Interceptors.Add<GrpcLoggingInterceptor>());
 
 _ = builder.Configuration.GetConnectionString("ReviewsMongo")
     ?? throw new InvalidOperationException("Connection string 'ReviewsMongo' is missing");
@@ -56,6 +58,7 @@ app.UseExceptionHandler();
 app.UseSwagger();
 app.UseSwaggerUI();
 app.MapControllers();
+app.MapGrpcService<ReviewsGrpcService>();
 app.MapDefaultEndpoints();
 
 app.Run();

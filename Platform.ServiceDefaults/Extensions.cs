@@ -49,6 +49,7 @@ public static class Extensions
 
         builder.Services.AddHttpContextAccessor();
         builder.Services.AddTransient<CorrelationIdHandler>();
+        builder.Services.AddSingleton<GrpcLoggingInterceptor>();
 
         builder.Services.ConfigureHttpClientDefaults(http =>
         {
@@ -81,7 +82,8 @@ public static class Extensions
             {
                 metrics.AddAspNetCoreInstrumentation()
                     .AddHttpClientInstrumentation()
-                    .AddRuntimeInstrumentation();
+                    .AddRuntimeInstrumentation()
+                    .AddMeter("Catalog.Cache");
             })
             .WithTracing(tracing =>
             {
@@ -89,6 +91,8 @@ public static class Extensions
                     .AddSource("Enrollments.Api")
                     .AddSource("Catalog.Api")
                     .AddSource("Reviews.WebApi")
+                    .AddSource("Grpc.Net.Client")
+                    .AddSource("Grpc.AspNetCore.Server")
                     .AddSource("MongoDB.Driver.Core.Extensions.DiagnosticSources")
                     .AddAspNetCoreInstrumentation()
                     .AddHttpClientInstrumentation()
