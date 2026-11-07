@@ -1,8 +1,11 @@
 using Enrollments.Api;
 using Enrollments.Bll;
 using Enrollments.Dal;
+using Platform.ServiceDefaults;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.AddServiceDefaults();
 
 var connectionString = builder.Configuration.GetConnectionString("EnrollmentsDb")
     ?? throw new InvalidOperationException("Connection string 'EnrollmentsDb' is missing");
@@ -13,7 +16,9 @@ builder.Services.AddScoped<IStudentService, StudentService>();
 builder.Services.AddScoped<ICourseService, CourseService>();
 builder.Services.AddAutoMapper(cfg =>
 {
-    cfg.LicenseKey = builder.Configuration["AutoMapper:LicenseKey"];
+    var licenseKey = builder.Configuration["AutoMapper:LicenseKey"];
+    if (!string.IsNullOrWhiteSpace(licenseKey))
+        cfg.LicenseKey = licenseKey;
     cfg.AddProfile<EnrollmentProfile>();
 });
 builder.Services.AddControllers();
@@ -26,9 +31,11 @@ builder.Services.AddExceptionHandler<DomainExceptionHandler>();
 
 var app = builder.Build();
 
+app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseExceptionHandler();
 app.UseSwagger();
 app.UseSwaggerUI();
 app.MapControllers();
+app.MapDefaultEndpoints();
 
 app.Run();
