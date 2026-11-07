@@ -33,6 +33,7 @@ public static class Extensions
             .MinimumLevel.Override("LuckyPennySoftware.MediatR.License", LogEventLevel.Fatal)
             .Enrich.FromLogContext()
             .Enrich.WithProperty("ServiceName", builder.Environment.ApplicationName)
+            .Enrich.WithProperty("Environment", builder.Environment.EnvironmentName)
             .Enrich.WithEnvironmentName()
             .Enrich.WithMachineName()
             .Enrich.WithThreadId()
@@ -85,6 +86,9 @@ public static class Extensions
             .WithTracing(tracing =>
             {
                 tracing.AddSource(builder.Environment.ApplicationName)
+                    .AddSource("Enrollments.Api")
+                    .AddSource("Catalog.Api")
+                    .AddSource("Reviews.WebApi")
                     .AddSource("MongoDB.Driver.Core.Extensions.DiagnosticSources")
                     .AddAspNetCoreInstrumentation()
                     .AddHttpClientInstrumentation()
@@ -92,14 +96,6 @@ public static class Extensions
                     .SetSampler(new TraceIdRatioBasedSampler(samplingRatio));
             });
 
-        builder.AddOpenTelemetryExporters();
-
-        return builder;
-    }
-
-    private static TBuilder AddOpenTelemetryExporters<TBuilder>(this TBuilder builder)
-        where TBuilder : IHostApplicationBuilder
-    {
         if (!string.IsNullOrWhiteSpace(builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]))
             builder.Services.AddOpenTelemetry().UseOtlpExporter();
 

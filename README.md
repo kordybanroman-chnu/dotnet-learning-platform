@@ -142,6 +142,15 @@ docker exec -i <sql-container> /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa 
 docker exec -i <sql-container> /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Pass@word1' -C -d EnrollmentsDb < db/p1/seed.sql
 ```
 
+Після старту перевірте Gateway на порту 5000:
+
+```bash
+curl -i 'http://localhost:5000/api/courses?page=1'
+curl -i 'http://localhost:5000/api/enrollments/1'
+curl -i 'http://localhost:5000/api/reviews?courseId=101'
+curl -i 'http://localhost:5000/api/aggregator/enrollments/1/full'
+```
+
 Залежності: `Api → Bll → Dal`, `Domain` - спільний; у Reviews напрямок `WebApi → Application → Domain`, `Infrastructure → Application/Domain`. Усі сервіси, Gateway і Aggregator посилаються лише на `Platform.ServiceDefaults`; `AppHost` посилається на них. Рядки підключення передає Aspire через `ConnectionStrings__EnrollmentsDb`, `ConnectionStrings__CatalogDb`, `ConnectionStrings__ReviewsMongo`; резервні значення для запуску без AppHost лежать в `appsettings.json`. Catalog застосовує міграції під час старту (прапорець `Catalog:MigrateAndSeed`), у Production це вимкнено.
 
 ## Приклади запитів (Enrollments)
@@ -235,16 +244,9 @@ curl -X DELETE 'http://localhost:5084/api/reviews/<id>'
 
 `Platform.ApiGateway` маршрутизує запити за catch-all правилами YARP. Адреси кластерів записані логічними іменами (`http://enrollments-api`, `http://catalog-api`, `http://reviews-api`, `http://aggregator`), фізичні порти підставляє service discovery Aspire. Маршрут Aggregator має `Order: 1`, решта - `Order: 2`. Gateway генерує `X-Correlation-Id`, якщо клієнт його не надіслав, повертає заголовок у відповіді та логує метод, шлях, маршрут, статус і тривалість.
 
-`Platform.Aggregator` збирає картку запису на курс: запис з Enrollments, актуальні дані курсів з Catalog і відгуки з Reviews. Виклики Catalog і Reviews виконуються паралельно через `Task.WhenAll`; спільний `CancellationToken` передається в усі запити. Якщо сервіс недоступний, відповідь містить доступні дані й `warnings`, а не `500`.
+`Platform.Aggregator` збирає картку запису на курс: запис з Enrollments, актуальні дані курсів з Catalog і відгуки з Reviews. Виклики Catalog і Reviews виконуються паралельно через `Task.WhenAll`; спільний `CancellationToken` передається в усі запити. Якщо сервіс недоступний, відповідь містить доступні дані й `warnings`, а не `500`. Приклади запитів через Gateway наведені в розділі запуску платформи.
 
-```bash
-curl -i 'http://localhost:5000/api/enrollments/1'
-curl -i 'http://localhost:5000/api/courses?page=1'
-curl -i 'http://localhost:5000/api/reviews?courseId=101'
-curl -i 'http://localhost:5000/api/aggregator/enrollments/1/full'
-```
-
-Зупиніть `reviews-api` у Dashboard і повторіть останній запит: `warnings` міститиме `reviews-api is unavailable`, поля `enrollment` і `courses` залишаться заповненими. Прямий запит до `<reviews-api-url>/api/reviews` в обхід Gateway не містить `X-Correlation-Id` на вході; сервіс згенерує власний id і поверне його у відповіді. Через Gateway клієнтський id зберігається в усьому ланцюжку.
+Зупиніть `reviews-api` у Dashboard і повторіть запит до Aggregator: `warnings` міститиме `reviews-api is unavailable`, поля `enrollment` і `courses` залишаться заповненими. Прямий запит до `<reviews-api-url>/api/reviews` в обхід Gateway не містить `X-Correlation-Id` на вході; сервіс згенерує власний id і поверне його у відповіді. Через Gateway клієнтський id зберігається в усьому ланцюжку.
 
 `ServiceDefaults` підключає Serilog (`CompactJsonFormatter`, enrichers `ServiceName`, `EnvironmentName`, `MachineName`, `ThreadId`, `TraceId`, `SpanId`), OpenTelemetry для ASP.NET Core, `HttpClient`, `SqlClient` і MongoDB, а також `CorrelationIdMiddleware` та `CorrelationIdHandler`. Логи, трасування й метрики всіх сервісів видно в Aspire Dashboard: пошук за `CorrelationId` показує ланцюжок Gateway → Aggregator → сервіси → БД. Знімки: `docs/lab-05/dashboard-resources.png`, `docs/lab-05/trace-aggregator.png`, `docs/lab-05/structured-logs-correlation.png`; команди перевірки - `docs/lab-05/manual-checks.md`.
 

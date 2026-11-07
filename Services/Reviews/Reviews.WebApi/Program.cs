@@ -10,6 +10,9 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
 
+_ = builder.Configuration.GetConnectionString("ReviewsMongo")
+    ?? throw new InvalidOperationException("Connection string 'ReviewsMongo' is missing");
+
 builder.Services
     .AddApplication(builder.Configuration)
     .AddInfrastructure(builder.Configuration);
