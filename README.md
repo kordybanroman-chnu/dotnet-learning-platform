@@ -256,13 +256,13 @@ curl -X DELETE 'http://localhost:5084/api/reviews/<id>'
 
 ### Дворівневий кеш каталогу
 
-`Catalog.Bll/Caching/TwoLevelCache` працює за схемою cache-aside: L1 (`IMemoryCache`) → L2 (`IDistributedCache` поверх Redis) → EF Core. L1 обмежений `SizeLimit = 10_000`, кожен запис має `Size = 1`, sliding expiration та absolute expiration; L1 живе 1-5 хв, L2 - 5-30 хв. Після запису в БД ключі видаляються з обох рівнів у тій самій операції, причина пише в лог.
+`Catalog.Bll/Caching/TwoLevelCache` працює за схемою cache-aside: L1 (`IMemoryCache`) → L2 (`IDistributedCache` поверх Redis) → EF Core. L1 обмежений `SizeLimit = 10_000`, кожен запис має `Size = 1`; для L1 задані sliding expiration та absolute expiration (не більше двох sliding-періодів), для L2 - абсолютний TTL. Після запису в БД ключі видаляються з обох рівнів у тій самій операції, причина пише в лог.
 
-| Ключ | Дані | L1 | L2 |
+| Ключ | Дані | L1 sliding / максимум | L2 |
 | --- | --- | --- | --- |
-| `catalog:course:{id}` | картка курсу | 1 хв | 10 хв |
-| `catalog:instructor:{id}:courses` | курси інструктора | 1 хв | 5 хв |
-| `catalog:categories:all` | довідник категорій | 5 хв | 30 хв |
+| `catalog:course:{id}` | картка курсу | 1 хв / 2 хв | 10 хв |
+| `catalog:instructor:{id}:courses` | курси інструктора | 1 хв / 2 хв | 5 хв |
+| `catalog:categories:all` | довідник категорій | 5 хв / 10 хв | 30 хв |
 
 `CacheMetrics` створює Meter `Catalog.Cache` з лічильниками `cache.hits`, `cache.misses` (тег `cache.level` = `L1`/`L2`) та `cache.invalidations`. Meter підключений у `ServiceDefaults`, тому метрики видні в Dashboard.
 
@@ -280,7 +280,7 @@ curl -X DELETE 'http://localhost:5084/api/reviews/<id>'
 
 ### Aggregator
 
-`Platform.Aggregator` реєструє три типізовані gRPC-клієнти через `AddGrpcClient` з адресами `https://enrollments-api`, `https://catalog-api`, `https://reviews-api`; service discovery підставляє порти з AppHost. Запит до `catalog` і `reviews` виконується паралельно через `Task.WhenAll`, `RpcException` зі статусом `Unavailable` або `DeadlineExceeded` перетворюється на `warnings`, а не на `500`.
+`Platform.Aggregator` реєструє три типізовані gRPC-клієнти через `AddGrpcClient` з адресами `https://enrollments-api`, `https://catalog-api`, `https://reviews-api`; service discovery підставляє порти з AppHost. Запит до `catalog` і `reviews` виконується паралельно через `Task.WhenAll`, кожен виклик має дедлайн 3 с. `RpcException` зі статусом `Unavailable` або `DeadlineExceeded` перетворюється на `warnings`, а не на `500`; інші помилки не маскуються.
 
 Складена відповідь кешується в Redis за ключем `aggregator:enrollment:{id}:full` на 30 с. Кеш перевіряється до gRPC-викликів; відповіді з `warnings` не кешуються. Якщо Redis недоступний, Aggregator логує попередження і збирає дані напряму.
 
@@ -292,7 +292,7 @@ curl -s 'http://localhost:5000/api/courses/101'
 curl -s 'http://localhost:5000/api/aggregator/enrollments/1/full'
 ```
 
-Другий GET курсу не має SQL-span у Traces. Trace агрегувального запиту містить gRPC client/server spans у одному ланцюжку Gateway → Aggregator → сервіси → БД. Вимірювання: HTTP-агрегація Лаб. 05 - 350 ms, gRPC з холодним кешем - 58.44 ms, повторний запит із кешем агрегатора - 21.88 ms.
+Другий GET курсу не має SQL-span у Traces. Trace агрегувального запиту містить gRPC client/server spans у одному ланцюжку Gateway → Aggregator → сервіси → БД. Вимірювання: HTTP-агрегація Лаб. 05 - 350 ms, gRPC з холодним кешем Catalog - 50.53 ms. В обох трейсах присутній SQL-запит Catalog, тому різниця показує транспорт, а не ефект кешу.
 
 Знімки: `docs/lab-06/dashboard-resources.png`, `docs/lab-06/trace-cache-hit.png`, `docs/lab-06/trace-grpc-aggregator.png`, `docs/lab-06/metrics-cache-hits.png`, `docs/lab-06/structured-logs-cache.png`. Повні команди й очікувані логи описані в `docs/lab-06/manual-checks.md`.
 

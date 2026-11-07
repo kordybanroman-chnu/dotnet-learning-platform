@@ -39,7 +39,7 @@ curl -s -X PUT 'http://localhost:5000/api/courses/101/price' \
   -H 'Content-Type: application/json' -d '{"price":1000}'
 ```
 
-Список категорій кешується окремо (`catalog:categories:all`, L1 5 хв, L2 30 хв):
+Список категорій кешується окремо (`catalog:categories:all`, L1 sliding 5 хв з абсолютним максимумом 10 хв, L2 30 хв):
 
 ```bash
 curl -s 'http://localhost:5000/api/categories'
@@ -75,7 +75,7 @@ curl -s 'http://localhost:5000/api/aggregator/enrollments/1/full'
 
 1. Зупиніть `catalog-api` у Dashboard.
 2. `curl -s 'http://localhost:5000/api/aggregator/enrollments/1/full'`.
-3. Очікування: `200`, `enrollment` і `reviews` заповнені, `courses` порожній, `warnings` містить `catalog-api is unavailable`.
+3. Очікування: `200` за 3-4 с (дедлайн gRPC-виклику), `enrollment` і `reviews` заповнені, `courses` порожній, `warnings` містить `catalog-api is unavailable`.
 4. Запустіть `catalog-api`; наступний запит повертає курси без попереджень.
 
 ## Метрики
@@ -89,10 +89,9 @@ curl -s 'http://localhost:5000/api/aggregator/enrollments/1/full'
 | Запит | Транспорт | Тривалість у Traces |
 | --- | --- | --- |
 | `GET /api/aggregator/enrollments/1/full` | HTTP, Лаб. 05 | 350 ms (`docs/lab-05/trace-aggregator.png`) |
-| `GET /api/aggregator/enrollments/1/full` | gRPC, холодний кеш | 58.44 ms (`docs/lab-06/trace-grpc-aggregator.png`) |
-| `GET /api/aggregator/enrollments/1/full` | gRPC, кеш агрегатора | 21.88 ms |
+| `GET /api/aggregator/enrollments/1/full` | gRPC, холодний кеш Catalog | 50.53 ms (`docs/lab-06/trace-grpc-aggregator.png`) |
 
-Вимірювання: відкрийте однаковий запит у Traces, порівняйте `Duration` кореневого span Aggregator. Кеш агрегатора на момент вимірювання має бути холодним (зачекайте 30 с або перезапустіть Aggregator). HTTP-вимір узятий зі знімка Лаб. 05, gRPC-виміри зняті на цій машині 7 листопада 2026.
+Умови виміру: кеш Aggregator порожній, картка курсу відсутня і в L1, і в L2, тому в обох трейсах є `SELECT` Catalog. Перед запитом виконано PUT тієї самої ціни: він очистив `catalog:course:101` та `catalog:instructor:1:courses`, не змінивши даних. HTTP-вимір узятий зі знімка Лаб. 05, gRPC-вимір знятий 7 листопада 2026.
 
 ## Знімки
 
