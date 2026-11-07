@@ -18,6 +18,7 @@ public sealed class EnrollmentAggregator(
     ILogger<EnrollmentAggregator> logger)
 {
     private static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan CallTimeout = TimeSpan.FromSeconds(3);
 
     public async Task<FullEnrollmentDto?> GetFullEnrollmentAsync(long enrollmentId, CancellationToken ct)
     {
@@ -35,7 +36,7 @@ public sealed class EnrollmentAggregator(
         try
         {
             enrollment = await enrollments.GetEnrollmentAsync(
-                new GetEnrollmentRequest { Id = enrollmentId }, cancellationToken: ct);
+                new GetEnrollmentRequest { Id = enrollmentId }, CreateCallOptions(ct));
         }
         catch (RpcException ex) when (ex.StatusCode == StatusCode.NotFound)
         {
@@ -48,14 +49,14 @@ public sealed class EnrollmentAggregator(
         var coursesTask = SafeAsync(
             () => catalog.GetCoursesByIdsAsync(
                 new GetCoursesByIdsRequest { Ids = { courseIds } },
-                cancellationToken: ct).ResponseAsync,
-            "catalog-api", warnings);
+                CreateCallOptions(ct)).ResponseAsync,
+            "catalog-api", warnings, ct);
 
         var reviewsTask = SafeAsync(
             () => reviews.GetForCoursesAsync(
                 new GetForCoursesRequest { CourseIds = { courseIds.Select(id => (int)id) } },
-                cancellationToken: ct).ResponseAsync,
-            "reviews-api", warnings);
+                CreateCallOptions(ct)).ResponseAsync,
+            "reviews-api", warnings, ct);
 
         await Task.WhenAll(coursesTask, reviewsTask);
 
@@ -72,7 +73,7 @@ public sealed class EnrollmentAggregator(
     }
 
     private async Task<T?> SafeAsync<T>(
-        Func<Task<T>> call, string service, List<string> warnings) where T : class
+        Func<Task<T>> call, string service, List<string> warnings, CancellationToken ct) where T : class
     {
         var stopwatch = Stopwatch.StartNew();
         try
@@ -82,17 +83,13 @@ public sealed class EnrollmentAggregator(
                 service, stopwatch.ElapsedMilliseconds);
             return result;
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (RpcException ex) when (ex.StatusCode is StatusCode.Unavailable or StatusCode.DeadlineExceeded)
         {
             logger.LogWarning(ex, "{Service} is unavailable after {ElapsedMilliseconds} ms",
-                service, stopwatch.ElapsedMilliseconds);
-            lock (warnings)
-                warnings.Add($"{service} is unavailable");
-            return null;
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "{Service} failed after {ElapsedMilliseconds} ms",
                 service, stopwatch.ElapsedMilliseconds);
             lock (warnings)
                 warnings.Add($"{service} is unavailable");
@@ -180,6 +177,9 @@ public sealed class EnrollmentAggregator(
         review.Version,
         ToDateTime(review.CreatedAt),
         review.UpdatedAt is null ? null : review.UpdatedAt.ToDateTime());
+
+    private static CallOptions CreateCallOptions(CancellationToken ct) =>
+        new(deadline: DateTime.UtcNow.Add(CallTimeout), cancellationToken: ct);
 
     private static DateTime ToDateTime(Timestamp? value) =>
         value is null ? DateTime.UnixEpoch : value.ToDateTime();
