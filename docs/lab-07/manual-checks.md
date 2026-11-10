@@ -7,7 +7,9 @@ dotnet user-secrets set "Parameters:sql-password" "Pass@word1" --project Platfor
 dotnet run --project Platform.AppHost
 ```
 
-У Dashboard має бути 12 ресурсів: `sql`, `mongo`, `redis`, `enrollments-api`, `catalog-api`, `reviews-api`, `aggregator`, `gateway` і `aspire-dashboard`. Кожен проєкт має статус Healthy, бо в AppHost доданий `WithHttpHealthCheck("/health")`.
+У Dashboard має бути 12 ресурсів: `sql`, `CatalogDb`, `EnrollmentsDb`, `mongo`, `ReviewsMongo`, `redis`, `sql-password`, `enrollments-api`, `catalog-api`, `reviews-api`, `aggregator`, `gateway`. Кожен проєкт має `WithHttpHealthCheck("/health")`. Dashboard 9.5 у колонці State показує `Running`, а статус health видно в картці ресурсу та у відповіді `/health`; `WaitFor` чекає лише критичні залежності.
+
+Детальна карта критеріїв: `docs/lab-07/criteria.md`.
 
 Порти мікросервісів динамічні. Далі `<catalog-url>`, `<reviews-url>`, `<enrollments-url>` означають HTTP-адресу відповідного ресурсу з вкладки Resources.
 
@@ -26,7 +28,6 @@ curl -i '<catalog-url>/health/startup'
   "status": "Healthy",
   "totalDurationMs": 12.34,
   "checks": [
-    { "name": "self", "status": "Healthy" },
     { "name": "catalog-db", "status": "Healthy" },
     { "name": "redis-cache", "status": "Healthy" }
   ]
@@ -75,22 +76,22 @@ curl -i '<catalog-url>/health/ready'
 curl -s 'http://localhost:5000/api/aggregator/enrollments/1/full'
 ```
 
-4. Очікування: 200, `enrollment` і `courses` заповнені, `reviews` порожній, `warnings` містить `reviews-api is unavailable`. У Structured logs є `OnRetry` з категорії `Polly` і gRPC-повтори; у Metrics - `resilience.polly.strategy.events` з `event.name = OnRetry`.
+4. Очікування: 200, `enrollment` і `courses` заповнені, `reviews` порожній, `warnings` містить `reviews-api is unavailable`. Перші запити після зупинки тривають до 5 с, поки спрацьовують повтори. У Structured logs є `OnRetry` з категорії `Polly` і gRPC-повтори; у Metrics - `resilience.polly.strategy.events` з `event.name = OnRetry` і `pipeline.name = ReviewsServiceClient-standard`.
 5. Запустіть `reviews-api`; наступний запит повертає відгуки без `warnings`.
 
 ## Circuit breaker
 
 1. Зупиніть `reviews-api`.
-2. Виконайте 10–15 запитів до Aggregator у межах 30 с:
+2. Виконайте 6–8 запитів до Aggregator:
 
 ```bash
-for i in $(seq 1 15); do
+for i in $(seq 1 8); do
   curl -s -o /dev/null -w '%{http_code} %{time_total}\n' \
     'http://localhost:5000/api/aggregator/enrollments/1/full'
 done
 ```
 
-3. Очікування: спочатку запити повільні через повтори, після `MinimumThroughput` breaker розмикається. У логах `Aggregator.Resilience` є `Circuit opened for 00:00:05`, у Metrics - `event.name = OnCircuitOpened`, наступні запити відхиляються миттєво.
+3. Очікування: перші 3–4 запити повільні через повтори, після `MinimumThroughput` breaker розмикається. У логах `Aggregator.Resilience` є `Circuit opened for 00:00:05`, у Metrics - `event.name = OnCircuitOpened`, наступні запити відхиляються за 10–20 мс.
 4. Запустіть `reviews-api`; після `BreakDuration` (5 с) з'являється `OnHalfOpened`, потім `OnCircuitClosed`, відповіді знову містять відгуки.
 
 ## Бізнес-метрики
@@ -129,11 +130,13 @@ curl -s -X PUT 'http://localhost:5000/api/courses/101/price' \
 
 ## Знімки для здачі
 
-- `onretry-metric.png`: Metrics, `resilience.polly.strategy.events`, фільтр `event.name = OnRetry`.
-- `circuit-opened.png`: Structured logs з `Circuit opened` і метрика `OnCircuitOpened`.
+- `onretry-metric.png`: Metrics, `resilience.polly.strategy.events`, фільтри `event.name = OnRetry` і `pipeline.name = ReviewsServiceClient-standard`.
+- `circuit-opened.png`: Structured logs з `Circuit opened`.
+- `circuit-opened-metric.png`: Metrics, `resilience.polly.strategy.events`, фільтр `event.name = OnCircuitOpened`.
 - `business-metrics.png`: `enrollments.created` або `reviews.created` з тегами.
 - `health-ready-degraded.png`: `/health/ready` Catalog зі статусом `Degraded` при зупиненому Redis.
-- `resources-health.png`: Resources зі статусами всіх ресурсів.
+- `resources-health.png`: Resources зі всіма 12 ресурсами. Dashboard 9.5 показує `Running`; статус health підтверджується `/health` і карткою ресурсу.
+- `resources-health-details.png`: картка `catalog-api` з `Health state: Healthy` і перевіркою `catalog-api_http_/health_200_check`.
 
 ## Очікувані логи
 

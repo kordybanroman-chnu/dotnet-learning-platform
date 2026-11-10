@@ -304,8 +304,8 @@ curl -s 'http://localhost:5000/api/aggregator/enrollments/1/full'
 
 | Клієнт | Роль | Retry | Затримка | Attempt / Total | Circuit breaker | gRPC retry |
 | --- | --- | --- | --- | --- | --- | --- |
-| Enrollments | критичний, джерело картки | 3 | 0.5 с, exponential + jitter | 5 с / 30 с | 0.5 / 10 запитів / 30 с / 10 с | 3 спроби, backoff 0.5–1 с, `Unavailable` |
-| Catalog | критичний, без курсів картка неповна | 3 | 0.5 с, exponential + jitter | 6 с / 30 с | 0.3 / 10 / 30 с / 15 с | 4 спроби, backoff 0.5–2 с, `Unavailable`, `ResourceExhausted` |
+| Enrollments | критичний, джерело картки | 2 | 0.5 с, exponential + jitter | 5 с / 20 с | 0.5 / 10 запитів / 30 с / 10 с | 3 спроби, backoff 0.5–1 с, `Unavailable` |
+| Catalog | критичний, без курсів картка неповна | 2 | 0.5 с, exponential + jitter | 6 с / 25 с | 0.3 / 10 / 30 с / 15 с | 4 спроби, backoff 0.5–2 с, `Unavailable`, `ResourceExhausted` |
 | Reviews | некритичний, Aggregator повертає часткову відповідь | 1 | 0.5 с | 2 с / 6 с | 0.7 / 5 / 30 с / 5 с | 2 спроби, backoff 0.5–1 с, `Unavailable` |
 
 Значення `FailureRatio / MinimumThroughput / SamplingDuration / BreakDuration`. `MinimumThroughput` зменшено для навчального стенду: 10 для Enrollments і Catalog, 5 для Reviews, інакше breaker не встигає набрати статистику. `SamplingDuration = 30 с` більший за подвоєний найдовший `AttemptTimeout`.
@@ -320,7 +320,7 @@ HTTP-повтори для небезпечних методів вимкнен�
 
 | Сервіс | Meter | Лічильники | Гістограма | Gauge |
 | --- | --- | --- | --- | --- |
-| Enrollments | `Enrollments.Api` | `enrollments.created` (`status`), `enrollments.confirmed`, `enrollments.cancelled` | `enrollments.operation.duration` (`operation`, `result`) | `enrollments.awaiting_validation` |
+| Enrollments | `Enrollments.Api` | `enrollments.created` (`status`), `enrollments.confirmed` (`status`), `enrollments.cancelled` (`status`) | `enrollments.operation.duration` (`operation`, `result`) | `enrollments.awaiting_validation` |
 | Catalog | `Catalog.Api` | `catalog.courses.created` (`has.detail`, `category.bucket`), `catalog.courses.price_updated` (`price.band`), `catalog.courses.deleted` (`source`) | `catalog.operation.duration` (`operation`, `result`) | `catalog.courses.total` |
 | Reviews | `Reviews.WebApi` | `reviews.created` (`rating`), `reviews.updated` (`rating`), `reviews.deleted` (`source`) | `reviews.operation.duration` (`operation`, `result`) | `reviews.total` |
 
@@ -344,7 +344,8 @@ HTTP-повтори для небезпечних методів вимкнен�
 | `catalog-db` | Catalog | `database`, `sql`, `ready`, `startup` | `Unhealthy` |
 | `redis-cache` | Catalog, Aggregator | `cache`, `redis`, `ready` | `Degraded` |
 | `reviews-db` | Reviews | `database`, `mongodb`, `ready`, `startup` | `Unhealthy` |
-| `enrollments-api`, `catalog-api`, `reviews-api` | Aggregator | `grpc`, `downstream`, `ready` | `Unhealthy` |
+| `enrollments-api`, `catalog-api` | Aggregator | `grpc`, `downstream`, `ready` | `Unhealthy` |
+| `reviews-api` | Aggregator | `grpc`, `downstream`, `ready` | `Degraded` |
 
 SQL перевіряється запитом `SELECT 1` з таймаутом 5 с, MongoDB - `ping` з таймаутом 5 с, Redis - `PING` з таймаутом 3 с. Автоматичний Redis health check від Aspire вимкнений (`DisableHealthChecks = true`), щоб не було двох перевірок з різними статусами. Сервіси реалізують стандартний gRPC Health Checking Protocol, Aggregator викликає `Check` кожного downstream з дедлайном 2 с.
 
@@ -352,11 +353,11 @@ gRPC health service віддає лише перевірки з тегом `read
 
 Health-клієнти Aggregator не використовують resilience: перевірка має падати швидко, тому для них `RemoveAllResilienceHandlers` і явний дедлайн 2 с. Це не стосується бізнес-клієнтів, які мають повний набір політик.
 
-`Platform.AppHost` додає `.WithHttpHealthCheck("/health")` кожному ресурсу, тому Dashboard показує Healthy, Degraded або Unhealthy, а `WaitFor` чекає здорову залежність.
+`Platform.AppHost` додає `.WithHttpHealthCheck("/health")` кожному ресурсу. `WaitFor` залишений лише для критичних залежностей: БД, Enrollments і Catalog. Redis і Reviews підключаються через `WithReference` без `WaitFor`, тому їх недоступність на старті не блокує Catalog, Aggregator чи Gateway. Dashboard показує стан ресурсу, а деталі health checks доступні в його картці.
 
-Health endpoints відкриті й поза Development, як вимагає лабораторна. У production їх треба закрити на ingress або дозволити лише службі моніторингу.
+Health endpoints відкриті й поза Development, як вимагає лабораторна. У Development JSON містить `exception.Message`; поза Development поле `exception` дорівнює `null`, щоб не віддавати текст винятків. У production endpoints треба закрити на ingress або дозволити лише службі моніторингу.
 
-Команди перевірки: `docs/lab-07/manual-checks.md`.
+Команди перевірки: `docs/lab-07/manual-checks.md`. Карта критеріїв з точними файлами й символами: `docs/lab-07/criteria.md`.
 
 ## Розвиток (наступні лаби)
 
