@@ -12,6 +12,7 @@ public abstract class DownstreamGrpcHealthCheck(
 {
     protected abstract string ClientName { get; }
     protected abstract string ServiceName { get; }
+    protected virtual HealthStatus FailureStatus => HealthStatus.Unhealthy;
 
     public async Task<HealthCheckResult> CheckHealthAsync(
         HealthCheckContext context, CancellationToken ct = default)
@@ -26,12 +27,12 @@ public abstract class DownstreamGrpcHealthCheck(
 
             return reply.Status == HealthCheckResponse.Types.ServingStatus.Serving
                 ? HealthCheckResult.Healthy($"{ServiceName} is serving")
-                : HealthCheckResult.Unhealthy($"{ServiceName} status: {reply.Status}");
+                : new HealthCheckResult(FailureStatus, $"{ServiceName} status: {reply.Status}");
         }
         catch (RpcException ex)
         {
             logger.LogWarning(ex, "{ServiceName} health check failed", ServiceName);
-            return HealthCheckResult.Unhealthy($"{ServiceName} is unavailable", ex);
+            return new HealthCheckResult(FailureStatus, $"{ServiceName} is unavailable", ex);
         }
     }
 }
@@ -58,4 +59,5 @@ public sealed class ReviewsHealthCheck(
 {
     protected override string ClientName => "reviews-health";
     protected override string ServiceName => "reviews-api";
+    protected override HealthStatus FailureStatus => HealthStatus.Degraded;
 }

@@ -9,20 +9,20 @@ namespace Platform.Aggregator.Resilience;
 public static class GrpcResilience
 {
     private static readonly ResilienceProfile Enrollments = new(
-        MaxRetryAttempts: 3,
+        MaxRetryAttempts: 2,
         RetryDelay: TimeSpan.FromSeconds(0.5),
         AttemptTimeout: TimeSpan.FromSeconds(5),
-        TotalTimeout: TimeSpan.FromSeconds(30),
+        TotalTimeout: TimeSpan.FromSeconds(20),
         FailureRatio: 0.5,
         MinimumThroughput: 10,
         SamplingDuration: TimeSpan.FromSeconds(30),
         BreakDuration: TimeSpan.FromSeconds(10));
 
     private static readonly ResilienceProfile Catalog = new(
-        MaxRetryAttempts: 3,
+        MaxRetryAttempts: 2,
         RetryDelay: TimeSpan.FromSeconds(0.5),
         AttemptTimeout: TimeSpan.FromSeconds(6),
-        TotalTimeout: TimeSpan.FromSeconds(30),
+        TotalTimeout: TimeSpan.FromSeconds(25),
         FailureRatio: 0.3,
         MinimumThroughput: 10,
         SamplingDuration: TimeSpan.FromSeconds(30),

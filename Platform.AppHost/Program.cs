@@ -23,7 +23,6 @@ var catalog = builder.AddProject<Projects.Catalog_Api>("catalog-api")
     .WithReference(catalogDb)
     .WaitFor(catalogDb)
     .WithReference(redis)
-    .WaitFor(redis)
     .WithHttpHealthCheck("/health", endpointName: "http");
 
 var reviews = builder.AddProject<Projects.Reviews_WebApi>("reviews-api")
@@ -38,8 +37,6 @@ var aggregator = builder.AddProject<Projects.Platform_Aggregator>("aggregator")
     .WithReference(redis)
     .WaitFor(enrollments)
     .WaitFor(catalog)
-    .WaitFor(reviews)
-    .WaitFor(redis)
     .WithHttpHealthCheck("/health", endpointName: "http");
 
 builder.AddProject<Projects.Platform_ApiGateway>("gateway")
@@ -48,10 +45,6 @@ builder.AddProject<Projects.Platform_ApiGateway>("gateway")
     .WithReference(catalog)
     .WithReference(reviews)
     .WithReference(aggregator)
-    .WaitFor(enrollments)
-    .WaitFor(catalog)
-    .WaitFor(reviews)
-    .WaitFor(aggregator)
     .WithHttpHealthCheck("/health", endpointName: "http");
 
 builder.Build().Run();

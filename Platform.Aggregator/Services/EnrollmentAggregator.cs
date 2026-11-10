@@ -20,8 +20,8 @@ public sealed class EnrollmentAggregator(
     ILogger<EnrollmentAggregator> logger)
 {
     private static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(30);
-    private static readonly TimeSpan EnrollmentsTimeout = TimeSpan.FromSeconds(5);
-    private static readonly TimeSpan CatalogTimeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan EnrollmentsTimeout = TimeSpan.FromSeconds(17);
+    private static readonly TimeSpan CatalogTimeout = TimeSpan.FromSeconds(20);
     private static readonly TimeSpan ReviewsTimeout = TimeSpan.FromSeconds(5);
 
     public async Task<FullEnrollmentDto?> GetFullEnrollmentAsync(long enrollmentId, CancellationToken ct)

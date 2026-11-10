@@ -76,6 +76,7 @@ builder.Services.AddHealthChecks()
         timeout: TimeSpan.FromSeconds(3))
     .AddCheck<ReviewsHealthCheck>(
         "reviews-api",
+        failureStatus: HealthStatus.Degraded,
         tags: ["grpc", "downstream", "ready"],
         timeout: TimeSpan.FromSeconds(3));
 
