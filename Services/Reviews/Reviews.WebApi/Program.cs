@@ -6,6 +6,7 @@ using Reviews.Infrastructure.Seeding;
 using Platform.ServiceDefaults;
 using Reviews.WebApi;
 using Reviews.WebApi.Grpc;
+using Reviews.WebApi.Metrics;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -30,6 +31,8 @@ builder.Services.AddAutoMapper(configuration =>
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddSingleton<ReviewMetrics>();
+builder.Services.AddHostedService<ReviewMetricsPoller>();
 builder.Services.AddHealthChecks()
     .AddCheck<MongoHealthCheck>("mongodb");
 builder.Services.AddProblemDetails(options =>

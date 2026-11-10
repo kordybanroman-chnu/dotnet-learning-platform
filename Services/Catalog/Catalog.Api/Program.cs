@@ -1,5 +1,6 @@
 using Catalog.Api;
 using Catalog.Api.Grpc;
+using Catalog.Api.Metrics;
 using Catalog.Bll;
 using Catalog.Bll.Caching;
 using Catalog.Bll.Validators;
@@ -26,6 +27,8 @@ builder.Services.AddDbContext<CatalogDbContext>(options =>
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddScoped<ICourseService, CourseService>();
 builder.Services.AddScoped<ICategoryService, CategoryService>();
+builder.Services.AddSingleton<CatalogMetrics>();
+builder.Services.AddHostedService<CatalogMetricsPoller>();
 builder.Services.AddAutoMapper(configuration =>
 {
     var licenseKey = builder.Configuration["AutoMapper:LicenseKey"];

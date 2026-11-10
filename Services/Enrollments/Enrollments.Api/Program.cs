@@ -1,5 +1,6 @@
 using Enrollments.Api;
 using Enrollments.Api.Grpc;
+using Enrollments.Api.Metrics;
 using Enrollments.Bll;
 using Enrollments.Dal;
 using Platform.ServiceDefaults;
@@ -16,6 +17,8 @@ builder.Services.AddScoped<IUnitOfWork>(_ => new UnitOfWork(connectionString));
 builder.Services.AddScoped<IEnrollmentService, EnrollmentService>();
 builder.Services.AddScoped<IStudentService, StudentService>();
 builder.Services.AddScoped<ICourseService, CourseService>();
+builder.Services.AddSingleton<EnrollmentMetrics>();
+builder.Services.AddHostedService<EnrollmentMetricsPoller>();
 builder.Services.AddAutoMapper(cfg =>
 {
     var licenseKey = builder.Configuration["AutoMapper:LicenseKey"];
