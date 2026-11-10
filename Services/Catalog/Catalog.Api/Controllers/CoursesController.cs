@@ -31,14 +31,14 @@ public sealed class CoursesController(ICourseService service, CatalogMetrics met
         [FromServices] IValidator<CreateCourseDto> validator,
         CancellationToken ct)
     {
-        var result = await validator.ValidateAsync(input, ct);
-        if (!result.IsValid)
-            return ValidationErrors(result);
-
         var stopwatch = Stopwatch.StartNew();
         var success = false;
         try
         {
+            var result = await validator.ValidateAsync(input, ct);
+            if (!result.IsValid)
+                return ValidationErrors(result);
+
             var created = await service.CreateAsync(input, ct);
             metrics.CourseCreated(input.Syllabus is not null, input.CategoryIds.Count);
             success = true;
@@ -57,14 +57,14 @@ public sealed class CoursesController(ICourseService service, CatalogMetrics met
         [FromServices] IValidator<UpdateCoursePriceDto> validator,
         CancellationToken ct)
     {
-        var result = await validator.ValidateAsync(input, ct);
-        if (!result.IsValid)
-            return ValidationErrors(result);
-
         var stopwatch = Stopwatch.StartNew();
         var success = false;
         try
         {
+            var result = await validator.ValidateAsync(input, ct);
+            if (!result.IsValid)
+                return ValidationErrors(result);
+
             await service.UpdatePriceAsync(id, input.Price, ct);
             metrics.PriceUpdated(input.Price);
             success = true;
