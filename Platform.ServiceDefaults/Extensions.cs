@@ -153,6 +153,9 @@ public static class Extensions
     private static Task WriteHealthResponse(HttpContext context, HealthReport report)
     {
         context.Response.ContentType = "application/json; charset=utf-8";
+        var includeException = context.RequestServices
+            .GetRequiredService<IHostEnvironment>()
+            .IsDevelopment();
 
         return context.Response.WriteAsJsonAsync(new
         {
@@ -164,7 +167,7 @@ public static class Extensions
                 status = entry.Value.Status.ToString(),
                 durationMs = Math.Round(entry.Value.Duration.TotalMilliseconds, 2),
                 description = entry.Value.Description,
-                exception = entry.Value.Exception?.Message
+                exception = includeException ? entry.Value.Exception?.Message : null
             })
         });
     }
