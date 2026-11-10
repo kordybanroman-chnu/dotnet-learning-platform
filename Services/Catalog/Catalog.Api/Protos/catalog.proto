@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package catalog;
+
+option csharp_namespace = "Catalog.Grpc";
+
+import "google/protobuf/timestamp.proto";
+
+service CatalogService {
+  rpc GetCourse (GetCourseRequest) returns (CourseReply);
+  rpc GetCoursesByIds (GetCoursesByIdsRequest) returns (CoursesReply);
+}
+
+message GetCourseRequest {
+  int64 id = 1;
+}
+
+message GetCoursesByIdsRequest {
+  repeated int64 ids = 1;
+}
+
+message CourseDetailReply {
+  string syllabus = 1;
+  int32 duration_hours = 2;
+}
+
+message CourseImageReply {
+  int64 id = 1;
+  string url = 2;
+  int32 sort_order = 3;
+}
+
+message CourseReply {
+  int64 id = 1;
+  string slug = 2;
+  string title = 3;
+  double price = 4;
+  int64 instructor_id = 5;
+  string instructor_name = 6;
+  CourseDetailReply detail = 7;
+  repeated CourseImageReply images = 8;
+  repeated string categories = 9;
+  google.protobuf.Timestamp created_at = 10;
+}
+
+message CoursesReply {
+  repeated CourseReply courses = 1;
+}

@@ -1,4 +1,5 @@
 using AutoMapper;
+using Catalog.Bll.Caching;
 using Catalog.Dal;
 using Catalog.Domain;
 
@@ -10,10 +11,15 @@ public interface ICategoryService
     Task<CategoryWithCoursesDto> GetByIdAsync(long id, CancellationToken ct = default);
 }
 
-public sealed class CategoryService(IUnitOfWork uow, IMapper mapper) : ICategoryService
+public sealed class CategoryService(IUnitOfWork uow, IMapper mapper, ICatalogCache cache) : ICategoryService
 {
-    public async Task<IReadOnlyList<CategoryDto>> GetAllAsync(CancellationToken ct = default)
-        => mapper.Map<IReadOnlyList<CategoryDto>>(await uow.Categories.GetAllAsync(ct));
+    public Task<IReadOnlyList<CategoryDto>> GetAllAsync(CancellationToken ct = default)
+        => cache.GetOrCreateAsync(
+            CacheKeys.Categories,
+            async () => mapper.Map<IReadOnlyList<CategoryDto>>(await uow.Categories.GetAllAsync(ct)),
+            TimeSpan.FromMinutes(5),
+            TimeSpan.FromMinutes(30),
+            ct);
 
     public async Task<CategoryWithCoursesDto> GetByIdAsync(long id, CancellationToken ct = default)
     {

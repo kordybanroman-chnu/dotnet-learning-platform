@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package enrollments;
+
+option csharp_namespace = "Enrollments.Grpc";
+
+import "google/protobuf/timestamp.proto";
+
+service EnrollmentsService {
+  rpc GetEnrollment (GetEnrollmentRequest) returns (EnrollmentReply);
+}
+
+message GetEnrollmentRequest {
+  int64 id = 1;
+}
+
+message EnrollmentItemReply {
+  int64 course_id = 1;
+  string course_title = 2;
+  double unit_price = 3;
+  int32 units = 4;
+}
+
+message EnrollmentReply {
+  int64 id = 1;
+  int64 student_id = 2;
+  string status = 3;
+  google.protobuf.Timestamp enrolled_at = 4;
+  string note = 5;
+  string preferred_schedule = 6;
+  repeated EnrollmentItemReply items = 7;
+}

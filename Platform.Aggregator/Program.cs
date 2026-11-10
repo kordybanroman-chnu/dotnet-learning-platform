@@ -1,18 +1,26 @@
 using System.Text.Json.Serialization;
-using Platform.Aggregator.Clients;
+using Catalog.Grpc;
+using Enrollments.Grpc;
 using Platform.Aggregator.Services;
 using Platform.ServiceDefaults;
+using Reviews.Grpc;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
+builder.AddRedisDistributedCache("redis");
 
-builder.Services.AddHttpClient<EnrollmentsClient>(client =>
-    client.BaseAddress = new("https+http://enrollments-api"));
-builder.Services.AddHttpClient<CatalogClient>(client =>
-    client.BaseAddress = new("https+http://catalog-api"));
-builder.Services.AddHttpClient<ReviewsClient>(client =>
-    client.BaseAddress = new("https+http://reviews-api"));
+builder.Services.AddGrpcClient<EnrollmentsService.EnrollmentsServiceClient>(options =>
+        options.Address = new Uri("https://enrollments-api"))
+    .ConfigurePrimaryHttpMessageHandler(DevelopmentCertificateHandler);
+
+builder.Services.AddGrpcClient<CatalogService.CatalogServiceClient>(options =>
+        options.Address = new Uri("https://catalog-api"))
+    .ConfigurePrimaryHttpMessageHandler(DevelopmentCertificateHandler);
+
+builder.Services.AddGrpcClient<ReviewsService.ReviewsServiceClient>(options =>
+        options.Address = new Uri("https://reviews-api"))
+    .ConfigurePrimaryHttpMessageHandler(DevelopmentCertificateHandler);
 
 builder.Services.AddScoped<EnrollmentAggregator>();
 builder.Services.AddControllers()
@@ -26,3 +34,10 @@ app.MapControllers();
 app.MapDefaultEndpoints();
 
 app.Run();
+
+HttpClientHandler DevelopmentCertificateHandler() => new()
+{
+    ServerCertificateCustomValidationCallback = builder.Environment.IsDevelopment()
+        ? HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+        : null
+};

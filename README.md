@@ -35,19 +35,19 @@
 │   ├── p2/
 │   └── p3/
 ├── Platform.slnx
-├── Platform.AppHost/                 оркестрація Aspire: контейнери SQL Server і MongoDB, сервіси
-├── Platform.ServiceDefaults/         Serilog, OpenTelemetry, CorrelationId, health checks
+├── Platform.AppHost/                 оркестрація Aspire: SQL Server, MongoDB, Redis, сервіси
+├── Platform.ServiceDefaults/         Serilog, OpenTelemetry, CorrelationId, gRPC-інтерсептор, health checks
 ├── Platform.ApiGateway/              YARP-шлюз на порту 5000
-├── Platform.Aggregator/              typed HttpClients і агрегація картки запису
+├── Platform.Aggregator/              gRPC-клієнти, агрегація картки запису, кеш відповідей
 ├── Services/
 │   ├── Enrollments/
-│   │   ├── Enrollments.Api/
+│   │   ├── Enrollments.Api/          контролери, Protos/, Grpc/, Program.cs
 │   │   ├── Enrollments.Bll/
 │   │   ├── Enrollments.Dal/
 │   │   └── Enrollments.Domain/
 │   ├── Catalog/
-│   │   ├── Catalog.Api/
-│   │   ├── Catalog.Bll/
+│   │   ├── Catalog.Api/          контролери, Protos/, Grpc/, Program.cs
+│   │   ├── Catalog.Bll/          сервіси, DTO, Caching/ (L1 + L2)
 │   │   ├── Catalog.Dal/
 │   │   │   ├── Configurations/
 │   │   │   └── Migrations/
@@ -56,7 +56,7 @@
 │       ├── Reviews.Domain/     сутності, Value Objects, інтерфейси
 │       ├── Reviews.Application/ команди, запити, behaviors, DTO
 │       ├── Reviews.Infrastructure/ Mongo-контекст, BSON-мапінг, репозиторії, сідинг
-│       └── Reviews.WebApi/     контролери, Program.cs, ProblemDetails
+│       └── Reviews.WebApi/     контролери, Protos/, Grpc/, Program.cs, ProblemDetails
 └── deploy/k8s/
 ```
 
@@ -249,6 +249,52 @@ curl -X DELETE 'http://localhost:5084/api/reviews/<id>'
 Зупиніть `reviews-api` у Dashboard і повторіть запит до Aggregator: `warnings` міститиме `reviews-api is unavailable`, поля `enrollment` і `courses` залишаться заповненими. Прямий запит до `<reviews-api-url>/api/reviews` в обхід Gateway не містить `X-Correlation-Id` на вході; сервіс згенерує власний id і поверне його у відповіді. Через Gateway клієнтський id зберігається в усьому ланцюжку.
 
 `ServiceDefaults` підключає Serilog (`CompactJsonFormatter`, enrichers `ServiceName`, `EnvironmentName`, `MachineName`, `ThreadId`, `TraceId`, `SpanId`), OpenTelemetry для ASP.NET Core, `HttpClient`, `SqlClient` і MongoDB, а також `CorrelationIdMiddleware` та `CorrelationIdHandler`. Логи, трасування й метрики всіх сервісів видно в Aspire Dashboard: пошук за `CorrelationId` показує ланцюжок Gateway → Aggregator → сервіси → БД. Знімки: `docs/lab-05/dashboard-resources.png`, `docs/lab-05/trace-aggregator.png`, `docs/lab-05/structured-logs-correlation.png`; команди перевірки - `docs/lab-05/manual-checks.md`.
+
+## Кешування та gRPC (Лаб. 06)
+
+`AppHost` додає контейнер `redis` з іменованим volume (`WithDataVolume`) і передає `ConnectionStrings__redis` у `catalog-api` та `aggregator` через `WithReference`; обидва ресурси чекають `WaitFor(redis)`. Для запуску без AppHost у `appsettings.json` лежить `localhost:6379`.
+
+### Дворівневий кеш каталогу
+
+`Catalog.Bll/Caching/TwoLevelCache` працює за схемою cache-aside: L1 (`IMemoryCache`) → L2 (`IDistributedCache` поверх Redis) → EF Core. L1 обмежений `SizeLimit = 10_000`, кожен запис має `Size = 1`; для L1 задані sliding expiration та absolute expiration (не більше двох sliding-періодів), для L2 - абсолютний TTL. Після запису в БД ключі видаляються з обох рівнів у тій самій операції, причина пише в лог.
+
+| Ключ | Дані | L1 sliding / максимум | L2 |
+| --- | --- | --- | --- |
+| `catalog:course:{id}` | картка курсу | 1 хв / 2 хв | 10 хв |
+| `catalog:instructor:{id}:courses` | курси інструктора | 1 хв / 2 хв | 5 хв |
+| `catalog:categories:all` | довідник категорій | 5 хв / 10 хв | 30 хв |
+
+`CacheMetrics` створює Meter `Catalog.Cache` з лічильниками `cache.hits`, `cache.misses` (тег `cache.level` = `L1`/`L2`) та `cache.invalidations`. Meter підключений у `ServiceDefaults`, тому метрики видні в Dashboard.
+
+### gRPC-контракти
+
+`*.proto` лежать у `Protos/` кожного API. У сервісах вони підключені з `GrpcServices="Server"`, в `Platform.Aggregator` ті самі файли підключені з `GrpcServices="Client"`. Сервіси працюють поверх HTTPS-endpoint з ALPN, тому Kestrel одночасно віддає REST на `http://` і gRPC на `https://`.
+
+| Контракт | RPC | Реалізація |
+| --- | --- | --- |
+| `catalog.proto` | `GetCourse`, `GetCoursesByIds` | `Catalog.Api/Grpc/CatalogGrpcService` |
+| `enrollments.proto` | `GetEnrollment` | `Enrollments.Api/Grpc/EnrollmentsGrpcService` |
+| `reviews.proto` | `GetForCourses` | `Reviews.WebApi/Grpc/ReviewsGrpcService` |
+
+`GetCourse` і `GetEnrollment` кидають `RpcException` зi статусом `NotFound` для відсутнього Id та `InvalidArgument` для невалідного. `GrpcLoggingInterceptor` з `ServiceDefaults` логує метод, peer, статус і тривалість, а `CorrelationIdHandler` додає `X-Correlation-Id` у метадані кожного виклику.
+
+### Aggregator
+
+`Platform.Aggregator` реєструє три типізовані gRPC-клієнти через `AddGrpcClient` з адресами `https://enrollments-api`, `https://catalog-api`, `https://reviews-api`; service discovery підставляє порти з AppHost. Запит до `catalog` і `reviews` виконується паралельно через `Task.WhenAll`, кожен виклик має дедлайн 3 с. `RpcException` зі статусом `Unavailable` або `DeadlineExceeded` перетворюється на `warnings`, а не на `500`; інші помилки не маскуються.
+
+Складена відповідь кешується в Redis за ключем `aggregator:enrollment:{id}:full` на 30 с. Кеш перевіряється до gRPC-викликів; відповіді з `warnings` не кешуються. Якщо Redis недоступний, Aggregator логує попередження і збирає дані напряму.
+
+Перевірка:
+
+```bash
+curl -s 'http://localhost:5000/api/courses/101'
+curl -s 'http://localhost:5000/api/courses/101'
+curl -s 'http://localhost:5000/api/aggregator/enrollments/1/full'
+```
+
+Другий GET курсу не має SQL-span у Traces. Trace агрегувального запиту містить gRPC client/server spans у одному ланцюжку Gateway → Aggregator → сервіси → БД. Вимірювання: HTTP-агрегація Лаб. 05 - 350 ms, gRPC з холодним кешем Catalog - 50.53 ms. В обох трейсах присутній SQL-запит Catalog, тому різниця показує транспорт, а не ефект кешу.
+
+Знімки: `docs/lab-06/dashboard-resources.png`, `docs/lab-06/trace-cache-hit.png`, `docs/lab-06/trace-grpc-aggregator.png`, `docs/lab-06/metrics-cache-hits.png`, `docs/lab-06/structured-logs-cache.png`. Повні команди й очікувані логи описані в `docs/lab-06/manual-checks.md`.
 
 ## Розвиток (наступні лаби)
 

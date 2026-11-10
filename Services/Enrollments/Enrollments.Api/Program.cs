@@ -1,4 +1,5 @@
 using Enrollments.Api;
+using Enrollments.Api.Grpc;
 using Enrollments.Bll;
 using Enrollments.Dal;
 using Platform.ServiceDefaults;
@@ -6,6 +7,7 @@ using Platform.ServiceDefaults;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
+builder.Services.AddGrpc(options => options.Interceptors.Add<GrpcLoggingInterceptor>());
 
 var connectionString = builder.Configuration.GetConnectionString("EnrollmentsDb")
     ?? throw new InvalidOperationException("Connection string 'EnrollmentsDb' is missing");
@@ -36,6 +38,7 @@ app.UseExceptionHandler();
 app.UseSwagger();
 app.UseSwaggerUI();
 app.MapControllers();
+app.MapGrpcService<EnrollmentsGrpcService>();
 app.MapDefaultEndpoints();
 
 app.Run();

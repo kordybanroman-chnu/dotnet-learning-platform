@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package reviews;
+
+option csharp_namespace = "Reviews.Grpc";
+
+import "google/protobuf/timestamp.proto";
+
+service ReviewsService {
+  rpc GetForCourses (GetForCoursesRequest) returns (ReviewsReply);
+}
+
+message GetForCoursesRequest {
+  repeated int32 course_ids = 1;
+}
+
+message ReviewCommentReply {
+  string id = 1;
+  string author = 2;
+  string text = 3;
+  google.protobuf.Timestamp created_at = 4;
+  int32 version = 5;
+}
+
+message ReviewReply {
+  string id = 1;
+  int32 course_id = 2;
+  string course_title = 3;
+  string author_id = 4;
+  string author_name = 5;
+  int32 rating = 6;
+  string text = 7;
+  repeated string photos = 8;
+  repeated ReviewCommentReply comments = 9;
+  int32 comments_count = 10;
+  string discussion_id = 11;
+  int32 version = 12;
+  google.protobuf.Timestamp created_at = 13;
+  google.protobuf.Timestamp updated_at = 14;
+}
+
+message ReviewsReply {
+  repeated ReviewReply reviews = 1;
+}
