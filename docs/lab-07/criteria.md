@@ -56,7 +56,7 @@ dotnet test Services/Reviews/Reviews.Domain.Tests --nologo
 - exponential backoff з jitter;
 - `FailureRatio`, `MinimumThroughput`, `SamplingDuration`, `BreakDuration`;
 - `OnOpened` = Error, `OnClosed` = Information, `OnHalfOpened` = Warning;
-- таймаути узгоджені: `AttemptTimeout × (MaxRetryAttempts + 1) + затримки` не перевищує `TotalTimeout`, а gRPC-дедлайн не менший за бюджет повторів.
+- таймаути узгоджені: `AttemptTimeout × (MaxRetryAttempts + 1) + затримки` не перевищує `TotalTimeout`; gRPC-дедлайн покриває бюджет HTTP-спроб, а gRPC retry виконується всередині HTTP attempt.
 
 Поточні значення:
 
@@ -109,7 +109,7 @@ dotnet test Services/Reviews/Reviews.Domain.Tests --nologo
 Де:
 
 - `Metrics`-класи трьох сервісів, методи `RecordDuration` і `CreateObservableGauge`.
-- Контролери: `EnrollmentsController`, `CoursesController`, `ReviewsController`. Гістограма пишеться в `finally`, тому фіксується і `success`, і `failure`.
+- Контролери: `EnrollmentsController`, `CoursesController`, `ReviewsController`. Гістограма пишеться в `finally`, тому фіксується і `success`, і `failure`. У Catalog `Stopwatch` охоплює і валідацію, тому 400 теж потрапляє в `catalog.operation.duration`.
 - Фонові poller-и: `EnrollmentMetricsPoller`, `CatalogMetricsPoller`, `ReviewMetricsPoller`, період 15 с.
 
 Gauge:
@@ -124,17 +124,17 @@ Gauge:
 
 Де:
 
-- `Services/Enrollments/Enrollments.Api/Program.cs`: `AddSqlServer`, name `enrollments-db`, tags `database`, `sql`, `ready`, `startup`, timeout 5 с.
-- `Services/Catalog/Catalog.Api/Program.cs`: `AddSqlServer`, name `catalog-db`, ті самі теги, timeout 5 с.
-- `Services/Reviews/Reviews.WebApi/Program.cs`: `AddMongoDb`, name `reviews-db`, tags `database`, `mongodb`, `ready`, `startup`, timeout 5 с.
+- `Services/Enrollments/Enrollments.Api/HealthChecks/EnrollmentsHealthChecks.cs`: `AddEnrollmentsHealthChecks`, `AddSqlServer`, name `enrollments-db`, tags `database`, `sql`, `ready`, `startup`, timeout 5 с.
+- `Services/Catalog/Catalog.Api/HealthChecks/CatalogHealthChecks.cs`: `AddCatalogHealthChecks`, `AddSqlServer` для `catalog-db` і `AddRedis` для `redis-cache`.
+- `Services/Reviews/Reviews.WebApi/HealthChecks/ReviewsHealthChecks.cs`: `AddReviewsHealthChecks`, `AddMongoDb` з `IMongoDatabase`, name `reviews-db`, tags `database`, `mongodb`, `ready`, `startup`, timeout 5 с.
 
-`AddSqlServer` виконує `SELECT 1`, `AddMongoDb` виконує `ping` через зареєстрований `IMongoClient`.
+`AddSqlServer` виконує `SELECT 1`, `AddMongoDb` з `IMongoDatabase` виконує `ping` конкретної бази.
 
 ### 9. Health check Redis зі статусом Degraded
 
 Де:
 
-- `Services/Catalog/Catalog.Api/Program.cs`: `AddRedis`, name `redis-cache`, `failureStatus: HealthStatus.Degraded`, tags `cache`, `redis`, `ready`, timeout 3 с.
+- `Services/Catalog/Catalog.Api/HealthChecks/CatalogHealthChecks.cs`: `AddRedis`, name `redis-cache`, `failureStatus: HealthStatus.Degraded`, tags `cache`, `redis`, `ready`, timeout 3 с.
 - `Platform.Aggregator/Program.cs`: та сама перевірка.
 - `AddRedisDistributedCache("redis", settings => settings.DisableHealthChecks = true)` вимикає дубль автоматичної перевірки Aspire.
 
@@ -171,9 +171,9 @@ Endpoints:
 - `/health`: усі перевірки;
 - `/alive`: аліас liveness.
 
-Усі мапляться в усіх середовищах, не лише Development. У Development `checks[].exception` містить текст винятку; поза Development поле `exception` = `null`.
+Усі мапляться в усіх середовищах, не лише Development. У Development `checks[].exception` і `checks[].description` містять деталі; поза Development обидва поля = `null`.
 
-Перевірено окремим запуском Catalog.Api з `ASPNETCORE_ENVIRONMENT=Production` і недоступним Redis: `/health/ready` повернув `Degraded`, а `exception` для `redis-cache` був `null`.
+Перевірено окремим запуском Catalog.Api з `ASPNETCORE_ENVIRONMENT=Production` і недоступним Redis: `/health/ready` повернув `Degraded`, а `exception` і `description` для `redis-cache` були `null`.
 
 ### 12. AppHost показує стан ресурсів через WithHttpHealthCheck
 
@@ -231,7 +231,7 @@ curl -s 'http://localhost:5000/api/aggregator/enrollments/1/full'
 ## Додаткові зміни в межах ЛР7
 
 - `Platform.ApiGateway/Program.cs`: доступ до `IReverseProxyFeature` через `context.Features.Get<IReverseProxyFeature>()`. Попередній `GetReverseProxyFeature()` кидав виняток на `/health`, бо health-запит не проходить через YARP.
-- `Services/Reviews/Reviews.Infrastructure/HealthChecks/MongoHealthCheck.cs` видалений, замість нього в `Reviews.WebApi/Program.cs` зареєстрований `AddMongoDb`. Функціональність перевірки MongoDB збережена, з'явилися ім'я, теги й таймаут.
+- `Services/Reviews/Reviews.Infrastructure/HealthChecks/MongoHealthCheck.cs` видалений, замість нього в `Reviews.WebApi/HealthChecks/ReviewsHealthChecks.cs` зареєстрований `AddMongoDb` з `IMongoDatabase`. Функціональність ping збережена, з'явилися ім'я, теги й таймаут.
 
 ## Обмеження
 

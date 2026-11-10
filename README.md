@@ -41,12 +41,12 @@
 ├── Platform.Aggregator/              gRPC-клієнти, агрегація картки запису, кеш відповідей
 ├── Services/
 │   ├── Enrollments/
-│   │   ├── Enrollments.Api/          контролери, Protos/, Grpc/, Program.cs
+│   │   ├── Enrollments.Api/          контролери, Protos/, Grpc/, Metrics/, HealthChecks/, Program.cs
 │   │   ├── Enrollments.Bll/
 │   │   ├── Enrollments.Dal/
 │   │   └── Enrollments.Domain/
 │   ├── Catalog/
-│   │   ├── Catalog.Api/          контролери, Protos/, Grpc/, Program.cs
+│   │   ├── Catalog.Api/          контролери, Protos/, Grpc/, Metrics/, HealthChecks/, Program.cs
 │   │   ├── Catalog.Bll/          сервіси, DTO, Caching/ (L1 + L2)
 │   │   ├── Catalog.Dal/
 │   │   │   ├── Configurations/
@@ -56,7 +56,7 @@
 │       ├── Reviews.Domain/     сутності, Value Objects, інтерфейси
 │       ├── Reviews.Application/ команди, запити, behaviors, DTO
 │       ├── Reviews.Infrastructure/ Mongo-контекст, BSON-мапінг, репозиторії, сідинг
-│       └── Reviews.WebApi/     контролери, Protos/, Grpc/, Program.cs, ProblemDetails
+│       └── Reviews.WebApi/     контролери, Protos/, Grpc/, Metrics/, HealthChecks/, Program.cs, ProblemDetails
 └── deploy/k8s/
 ```
 
@@ -211,7 +211,7 @@ curl -X DELETE '<catalog-api-url>/api/courses/101'
 
 BSON-мапінг заданий у `MongoMappings` без атрибутів у домені: camelCase, `IgnoreExtraElements`, приватні поля `_photos`/`_comments`, `Rating` через власний `RatingBsonSerializer` (у документі лишається `int`), `Author` через конструктор. Оновлення документа виконується `ReplaceOne` з фільтром за поточною версією, видалення - `DeleteOne` з тим самим фільтром; розбіжність версій дає `409`. GET повертає `ETag` з версією, PUT приймає `If-Match` і відхиляє застарілу версію.
 
-Мапінг помилок: `NotFoundException` → `404`, `ValidationException` і `DomainException` → `400`, `ConflictException` і `MongoWriteException` з `DuplicateKey` → `409`, інші `MongoWriteException` → `400`, `MongoConnectionException` і таймаут вибору сервера → `503`. Тіло - `ProblemDetails`; у Development додається `exception`, у логах - `CorrelationId` і `RequestPath`. `GET /health` виконує ping MongoDB через `MongoHealthCheck` і повертає `200 Healthy` або `503 Unhealthy`.
+Мапінг помилок: `NotFoundException` → `404`, `ValidationException` і `DomainException` → `400`, `ConflictException` і `MongoWriteException` з `DuplicateKey` → `409`, інші `MongoWriteException` → `400`, `MongoConnectionException` і таймаут вибору сервера → `503`. Тіло - `ProblemDetails`; у Development додається `exception`, у логах - `CorrelationId` і `RequestPath`. `GET /health/ready` виконує ping MongoDB через зареєстрований `AddMongoDb` з `IMongoDatabase` і повертає `200 Healthy`, `200 Degraded` або `503 Unhealthy`.
 
 Конфігурація - секція `MongoDb` (`ConnectionString`, `DatabaseName`). `ReviewsMongo` в AppHost - ім'я ресурсу й connection string; фактична назва бази задається `MongoDb:DatabaseName`. Development використовує `FeedbackDb`, Staging - `FeedbackDb_Staging`, Production - `FeedbackDb` з вимкненим сідингом (`Reviews:Seed = false`); рядок підключення перевизначається `ConnectionStrings__ReviewsMongo`. Старт:
 
@@ -326,6 +326,19 @@ HTTP-повтори для небезпечних методів вимкнен�
 
 `result` має значення `success` або `failure`, тривалість записується в обох випадках. Gauge оновлюється раз на 15 с фоновим poller-ом і показує поточний стан бази. Теги з Id студента, курсу чи відгуку не використовуються: вони дали б високу кардинальність.
 
+Значення тегів:
+
+| Тег | Значення |
+| --- | --- |
+| `status` | `Submitted`, `SeatsConfirmed`, `Cancelled` |
+| `operation` | `create`, `confirm`, `cancel`, `update-price`, `update`, `delete` |
+| `result` | `success`, `failure` |
+| `has.detail` | `yes`, `no` |
+| `category.bucket` | `0`, `1`, `2+` |
+| `price.band` | `low`, `medium`, `high` |
+| `rating` | `1`..`5` |
+| `source` | `api` |
+
 ### Health checks
 
 `ServiceDefaults` публікує endpoints у всіх середовищах:
@@ -353,9 +366,9 @@ gRPC health service віддає лише перевірки з тегом `read
 
 Health-клієнти Aggregator не використовують resilience: перевірка має падати швидко, тому для них `RemoveAllResilienceHandlers` і явний дедлайн 2 с. Це не стосується бізнес-клієнтів, які мають повний набір політик.
 
-`Platform.AppHost` додає `.WithHttpHealthCheck("/health")` кожному ресурсу. `WaitFor` залишений лише для критичних залежностей: БД, Enrollments і Catalog. Redis і Reviews підключаються через `WithReference` без `WaitFor`, тому їх недоступність на старті не блокує Catalog, Aggregator чи Gateway. Dashboard показує стан ресурсу, а деталі health checks доступні в його картці.
+`Platform.AppHost` додає `.WithHttpHealthCheck("/health")` кожному проєкту. `WaitFor` залишений лише для критичних залежностей: БД, Enrollments і Catalog. Redis і Reviews підключаються через `WithReference` без `WaitFor`, тому їх недоступність на старті не блокує Catalog, Aggregator чи Gateway. Dashboard показує стан ресурсу, а деталі health checks доступні в його картці.
 
-Health endpoints відкриті й поза Development, як вимагає лабораторна. У Development JSON містить `exception.Message`; поза Development поле `exception` дорівнює `null`, щоб не віддавати текст винятків. У production endpoints треба закрити на ingress або дозволити лише службі моніторингу.
+Health endpoints відкриті й поза Development, як вимагає лабораторна. У Development JSON містить `exception.Message` і `description`; поза Development обидва поля дорівнюють `null`, щоб не віддавати текст винятків і внутрішні деталі. У production endpoints треба закрити на ingress або дозволити лише службі моніторингу.
 
 Команди перевірки: `docs/lab-07/manual-checks.md`. Карта критеріїв з точними файлами й символами: `docs/lab-07/criteria.md`.
 
