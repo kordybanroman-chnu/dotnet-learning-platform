@@ -6,6 +6,8 @@ using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using Microsoft.Extensions.Caching.Distributed;
 using Platform.Aggregator.Models;
+using Polly.CircuitBreaker;
+using Polly.Timeout;
 using Reviews.Grpc;
 
 namespace Platform.Aggregator.Services;
@@ -90,7 +92,15 @@ public sealed class EnrollmentAggregator(
         {
             throw;
         }
-        catch (RpcException ex) when (ex.StatusCode is StatusCode.Unavailable or StatusCode.DeadlineExceeded)
+        catch (RpcException ex) when (IsTransient(ex))
+        {
+            logger.LogWarning(ex, "{Service} is unavailable after {ElapsedMilliseconds} ms",
+                service, stopwatch.ElapsedMilliseconds);
+            lock (warnings)
+                warnings.Add($"{service} is unavailable");
+            return null;
+        }
+        catch (Exception ex) when (ex is TimeoutRejectedException or BrokenCircuitException)
         {
             logger.LogWarning(ex, "{Service} is unavailable after {ElapsedMilliseconds} ms",
                 service, stopwatch.ElapsedMilliseconds);
@@ -99,6 +109,10 @@ public sealed class EnrollmentAggregator(
             return null;
         }
     }
+
+    private static bool IsTransient(RpcException exception) =>
+        exception.StatusCode is StatusCode.Unavailable or StatusCode.DeadlineExceeded
+        || exception.InnerException is TimeoutRejectedException or BrokenCircuitException;
 
     private async Task<FullEnrollmentDto?> TryGetAsync(string key, CancellationToken ct)
     {

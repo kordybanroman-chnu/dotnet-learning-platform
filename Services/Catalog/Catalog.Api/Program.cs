@@ -7,12 +7,13 @@ using Catalog.Bll.Validators;
 using Catalog.Dal;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Platform.ServiceDefaults;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
-builder.AddRedisDistributedCache("redis");
+builder.AddRedisDistributedCache("redis", settings => settings.DisableHealthChecks = true);
 builder.Services.AddMemoryCache(options => options.SizeLimit = 10_000);
 builder.Services.AddSingleton<CacheMetrics>();
 builder.Services.AddScoped<ICatalogCache, TwoLevelCache>();
@@ -20,6 +21,25 @@ builder.Services.AddGrpc(options => options.Interceptors.Add<GrpcLoggingIntercep
 
 var connectionString = builder.Configuration.GetConnectionString("CatalogDb")
     ?? throw new InvalidOperationException("Connection string 'CatalogDb' is missing");
+var redisConnectionString = builder.Configuration.GetConnectionString("redis")
+    ?? throw new InvalidOperationException("Connection string 'redis' is missing");
+
+builder.Services.AddHealthChecks()
+    .AddSqlServer(
+        connectionString: connectionString,
+        name: "catalog-db",
+        failureStatus: HealthStatus.Unhealthy,
+        tags: ["database", "sql", "ready", "startup"],
+        timeout: TimeSpan.FromSeconds(5))
+    .AddRedis(
+        redisConnectionString: redisConnectionString,
+        name: "redis-cache",
+        failureStatus: HealthStatus.Degraded,
+        tags: ["cache", "redis", "ready"],
+        timeout: TimeSpan.FromSeconds(3));
+builder.Services.AddGrpcHealthChecks(options =>
+    options.Services.Map("", registration =>
+        registration.Tags.Contains("ready") && !registration.Tags.Contains("cache")));
 
 builder.Services.AddDbContext<CatalogDbContext>(options =>
     options.UseSqlServer(connectionString, sql => sql.EnableRetryOnFailure()));
@@ -68,6 +88,7 @@ app.UseSwagger();
 app.UseSwaggerUI();
 app.MapControllers();
 app.MapGrpcService<CatalogGrpcService>();
+app.MapGrpcHealthChecksService();
 app.MapDefaultEndpoints();
 
 app.Run();

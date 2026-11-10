@@ -11,7 +11,7 @@ public static class GrpcResilience
     private static readonly ResilienceProfile Enrollments = new(
         MaxRetryAttempts: 3,
         RetryDelay: TimeSpan.FromSeconds(0.5),
-        AttemptTimeout: TimeSpan.FromSeconds(10),
+        AttemptTimeout: TimeSpan.FromSeconds(5),
         TotalTimeout: TimeSpan.FromSeconds(30),
         FailureRatio: 0.5,
         MinimumThroughput: 10,
@@ -19,9 +19,9 @@ public static class GrpcResilience
         BreakDuration: TimeSpan.FromSeconds(10));
 
     private static readonly ResilienceProfile Catalog = new(
-        MaxRetryAttempts: 4,
+        MaxRetryAttempts: 3,
         RetryDelay: TimeSpan.FromSeconds(0.5),
-        AttemptTimeout: TimeSpan.FromSeconds(10),
+        AttemptTimeout: TimeSpan.FromSeconds(6),
         TotalTimeout: TimeSpan.FromSeconds(30),
         FailureRatio: 0.3,
         MinimumThroughput: 10,
@@ -34,7 +34,7 @@ public static class GrpcResilience
         AttemptTimeout: TimeSpan.FromSeconds(2),
         TotalTimeout: TimeSpan.FromSeconds(6),
         FailureRatio: 0.7,
-        MinimumThroughput: 10,
+        MinimumThroughput: 5,
         SamplingDuration: TimeSpan.FromSeconds(30),
         BreakDuration: TimeSpan.FromSeconds(5));
 
@@ -62,6 +62,13 @@ public static class GrpcResilience
 
     public static void ConfigureReviews(IHttpClientBuilder client, ResilienceLogger logger) =>
         Configure(client, Reviews, logger);
+
+    public static void RemoveResilience(IHttpClientBuilder client)
+    {
+#pragma warning disable EXTEXP0001
+        client.RemoveAllResilienceHandlers();
+#pragma warning restore EXTEXP0001
+    }
 
     private static void Configure(
         IHttpClientBuilder client, ResilienceProfile profile, ResilienceLogger logger)

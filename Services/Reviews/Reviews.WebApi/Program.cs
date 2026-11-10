@@ -1,7 +1,8 @@
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Reviews.Application;
 using Reviews.Application.Reviews.Mapping;
 using Reviews.Infrastructure;
-using Reviews.Infrastructure.HealthChecks;
+using Reviews.Infrastructure.Persistence;
 using Reviews.Infrastructure.Seeding;
 using Platform.ServiceDefaults;
 using Reviews.WebApi;
@@ -34,7 +35,15 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddSingleton<ReviewMetrics>();
 builder.Services.AddHostedService<ReviewMetricsPoller>();
 builder.Services.AddHealthChecks()
-    .AddCheck<MongoHealthCheck>("mongodb");
+    .AddMongoDb(
+        sp => sp.GetRequiredService<MongoDbContext>().Client,
+        name: "reviews-db",
+        failureStatus: HealthStatus.Unhealthy,
+        tags: ["database", "mongodb", "ready", "startup"],
+        timeout: TimeSpan.FromSeconds(5));
+builder.Services.AddGrpcHealthChecks(options =>
+    options.Services.Map("", registration =>
+        registration.Tags.Contains("ready") && !registration.Tags.Contains("cache")));
 builder.Services.AddProblemDetails(options =>
 {
     options.CustomizeProblemDetails = context =>
@@ -62,6 +71,7 @@ app.UseSwagger();
 app.UseSwaggerUI();
 app.MapControllers();
 app.MapGrpcService<ReviewsGrpcService>();
+app.MapGrpcHealthChecksService();
 app.MapDefaultEndpoints();
 
 app.Run();

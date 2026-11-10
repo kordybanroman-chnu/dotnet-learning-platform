@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -119,15 +120,52 @@ public static class Extensions
 
     public static WebApplication MapDefaultEndpoints(this WebApplication app)
     {
-        if (app.Environment.IsDevelopment())
+        app.MapHealthChecks("/health", new HealthCheckOptions
         {
-            app.MapHealthChecks("/health");
-            app.MapHealthChecks("/alive", new HealthCheckOptions
-            {
-                Predicate = registration => registration.Tags.Contains("live")
-            });
-        }
+            ResponseWriter = WriteHealthResponse
+        });
+
+        app.MapHealthChecks("/health/live", new HealthCheckOptions
+        {
+            Predicate = registration => registration.Tags.Contains("live")
+        });
+
+        app.MapHealthChecks("/health/ready", new HealthCheckOptions
+        {
+            Predicate = registration => registration.Tags.Contains("ready"),
+            ResponseWriter = WriteHealthResponse
+        });
+
+        app.MapHealthChecks("/health/startup", new HealthCheckOptions
+        {
+            Predicate = registration => registration.Tags.Contains("startup"),
+            ResponseWriter = WriteHealthResponse
+        });
+
+        app.MapHealthChecks("/alive", new HealthCheckOptions
+        {
+            Predicate = registration => registration.Tags.Contains("live")
+        });
 
         return app;
+    }
+
+    private static Task WriteHealthResponse(HttpContext context, HealthReport report)
+    {
+        context.Response.ContentType = "application/json; charset=utf-8";
+
+        return context.Response.WriteAsJsonAsync(new
+        {
+            status = report.Status.ToString(),
+            totalDurationMs = Math.Round(report.TotalDuration.TotalMilliseconds, 2),
+            checks = report.Entries.Select(entry => new
+            {
+                name = entry.Key,
+                status = entry.Value.Status.ToString(),
+                durationMs = Math.Round(entry.Value.Duration.TotalMilliseconds, 2),
+                description = entry.Value.Description,
+                exception = entry.Value.Exception?.Message
+            })
+        });
     }
 }
