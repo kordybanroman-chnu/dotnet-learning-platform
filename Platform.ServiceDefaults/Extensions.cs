@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.ServiceDiscovery;
 using OpenTelemetry;
@@ -55,8 +56,9 @@ public static class Extensions
         {
             http.AddStandardResilienceHandler(options =>
             {
-                options.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(10);
-                options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(5);
+                options.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(30);
+                options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(10);
+                options.Retry.DisableForUnsafeHttpMethods();
             });
             http.AddServiceDiscovery();
             http.AddHttpMessageHandler<CorrelationIdHandler>();
@@ -83,7 +85,7 @@ public static class Extensions
                 metrics.AddAspNetCoreInstrumentation()
                     .AddHttpClientInstrumentation()
                     .AddRuntimeInstrumentation()
-                    .AddMeter("Catalog.Cache");
+                    .AddMeter("Catalog.Cache", "Enrollments.Api", "Catalog.Api", "Reviews.WebApi", "Polly");
             })
             .WithTracing(tracing =>
             {

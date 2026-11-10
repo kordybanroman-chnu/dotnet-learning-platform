@@ -1,6 +1,8 @@
 using System.Text.Json.Serialization;
 using Catalog.Grpc;
 using Enrollments.Grpc;
+using Microsoft.Extensions.Logging;
+using Platform.Aggregator.Resilience;
 using Platform.Aggregator.Services;
 using Platform.ServiceDefaults;
 using Reviews.Grpc;
@@ -10,17 +12,28 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddServiceDefaults();
 builder.AddRedisDistributedCache("redis");
 
-builder.Services.AddGrpcClient<EnrollmentsService.EnrollmentsServiceClient>(options =>
+var resilienceLogger = new ResilienceLogger();
+
+var enrollmentsClient = builder.Services
+    .AddGrpcClient<EnrollmentsService.EnrollmentsServiceClient>(options =>
         options.Address = new Uri("https://enrollments-api"))
+    .ConfigureChannel(channel => channel.ServiceConfig = GrpcResilience.EnrollmentsChannel)
     .ConfigurePrimaryHttpMessageHandler(DevelopmentCertificateHandler);
+GrpcResilience.ConfigureEnrollments(enrollmentsClient, resilienceLogger);
 
-builder.Services.AddGrpcClient<CatalogService.CatalogServiceClient>(options =>
+var catalogClient = builder.Services
+    .AddGrpcClient<CatalogService.CatalogServiceClient>(options =>
         options.Address = new Uri("https://catalog-api"))
+    .ConfigureChannel(channel => channel.ServiceConfig = GrpcResilience.CatalogChannel)
     .ConfigurePrimaryHttpMessageHandler(DevelopmentCertificateHandler);
+GrpcResilience.ConfigureCatalog(catalogClient, resilienceLogger);
 
-builder.Services.AddGrpcClient<ReviewsService.ReviewsServiceClient>(options =>
+var reviewsClient = builder.Services
+    .AddGrpcClient<ReviewsService.ReviewsServiceClient>(options =>
         options.Address = new Uri("https://reviews-api"))
+    .ConfigureChannel(channel => channel.ServiceConfig = GrpcResilience.ReviewsChannel)
     .ConfigurePrimaryHttpMessageHandler(DevelopmentCertificateHandler);
+GrpcResilience.ConfigureReviews(reviewsClient, resilienceLogger);
 
 builder.Services.AddScoped<EnrollmentAggregator>();
 builder.Services.AddControllers()
@@ -28,6 +41,9 @@ builder.Services.AddControllers()
         options.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull);
 
 var app = builder.Build();
+
+resilienceLogger.Logger = app.Services.GetRequiredService<ILoggerFactory>()
+    .CreateLogger("Aggregator.Resilience");
 
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.MapControllers();

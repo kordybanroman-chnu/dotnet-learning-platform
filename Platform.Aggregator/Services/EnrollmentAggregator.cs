@@ -18,7 +18,9 @@ public sealed class EnrollmentAggregator(
     ILogger<EnrollmentAggregator> logger)
 {
     private static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(30);
-    private static readonly TimeSpan CallTimeout = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan EnrollmentsTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan CatalogTimeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan ReviewsTimeout = TimeSpan.FromSeconds(5);
 
     public async Task<FullEnrollmentDto?> GetFullEnrollmentAsync(long enrollmentId, CancellationToken ct)
     {
@@ -36,7 +38,8 @@ public sealed class EnrollmentAggregator(
         try
         {
             enrollment = await enrollments.GetEnrollmentAsync(
-                new GetEnrollmentRequest { Id = enrollmentId }, CreateCallOptions(ct));
+                new GetEnrollmentRequest { Id = enrollmentId },
+                CreateCallOptions(ct, EnrollmentsTimeout));
         }
         catch (RpcException ex) when (ex.StatusCode == StatusCode.NotFound)
         {
@@ -49,13 +52,13 @@ public sealed class EnrollmentAggregator(
         var coursesTask = SafeAsync(
             () => catalog.GetCoursesByIdsAsync(
                 new GetCoursesByIdsRequest { Ids = { courseIds } },
-                CreateCallOptions(ct)).ResponseAsync,
+                CreateCallOptions(ct, CatalogTimeout)).ResponseAsync,
             "catalog-api", warnings, ct);
 
         var reviewsTask = SafeAsync(
             () => reviews.GetForCoursesAsync(
                 new GetForCoursesRequest { CourseIds = { courseIds.Select(id => (int)id) } },
-                CreateCallOptions(ct)).ResponseAsync,
+                CreateCallOptions(ct, ReviewsTimeout)).ResponseAsync,
             "reviews-api", warnings, ct);
 
         await Task.WhenAll(coursesTask, reviewsTask);
@@ -178,8 +181,8 @@ public sealed class EnrollmentAggregator(
         ToDateTime(review.CreatedAt),
         review.UpdatedAt is null ? null : review.UpdatedAt.ToDateTime());
 
-    private static CallOptions CreateCallOptions(CancellationToken ct) =>
-        new(deadline: DateTime.UtcNow.Add(CallTimeout), cancellationToken: ct);
+    private static CallOptions CreateCallOptions(CancellationToken ct, TimeSpan timeout) =>
+        new(deadline: DateTime.UtcNow.Add(timeout), cancellationToken: ct);
 
     private static DateTime ToDateTime(Timestamp? value) =>
         value is null ? DateTime.UnixEpoch : value.ToDateTime();
