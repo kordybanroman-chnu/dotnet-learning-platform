@@ -1,5 +1,6 @@
 using Catalog.Api;
 using Catalog.Api.Grpc;
+using Catalog.Api.HealthChecks;
 using Catalog.Api.Metrics;
 using Catalog.Bll;
 using Catalog.Bll.Caching;
@@ -7,7 +8,6 @@ using Catalog.Bll.Validators;
 using Catalog.Dal;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Platform.ServiceDefaults;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -25,18 +25,7 @@ var redisConnectionString = builder.Configuration.GetConnectionString("redis")
     ?? throw new InvalidOperationException("Connection string 'redis' is missing");
 
 builder.Services.AddHealthChecks()
-    .AddSqlServer(
-        connectionString: connectionString,
-        name: "catalog-db",
-        failureStatus: HealthStatus.Unhealthy,
-        tags: ["database", "sql", "ready", "startup"],
-        timeout: TimeSpan.FromSeconds(5))
-    .AddRedis(
-        redisConnectionString: redisConnectionString,
-        name: "redis-cache",
-        failureStatus: HealthStatus.Degraded,
-        tags: ["cache", "redis", "ready"],
-        timeout: TimeSpan.FromSeconds(3));
+    .AddCatalogHealthChecks(connectionString, redisConnectionString);
 builder.Services.AddGrpcHealthChecks(options =>
     options.Services.Map("", registration =>
         registration.Tags.Contains("ready") && !registration.Tags.Contains("cache")));

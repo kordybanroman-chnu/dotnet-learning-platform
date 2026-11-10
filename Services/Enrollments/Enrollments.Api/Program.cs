@@ -1,9 +1,9 @@
 using Enrollments.Api;
 using Enrollments.Api.Grpc;
+using Enrollments.Api.HealthChecks;
 using Enrollments.Api.Metrics;
 using Enrollments.Bll;
 using Enrollments.Dal;
-using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Platform.ServiceDefaults;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -15,12 +15,7 @@ var connectionString = builder.Configuration.GetConnectionString("EnrollmentsDb"
     ?? throw new InvalidOperationException("Connection string 'EnrollmentsDb' is missing");
 
 builder.Services.AddHealthChecks()
-    .AddSqlServer(
-        connectionString: connectionString,
-        name: "enrollments-db",
-        failureStatus: HealthStatus.Unhealthy,
-        tags: ["database", "sql", "ready", "startup"],
-        timeout: TimeSpan.FromSeconds(5));
+    .AddEnrollmentsHealthChecks(connectionString);
 builder.Services.AddGrpcHealthChecks(options =>
     options.Services.Map("", registration =>
         registration.Tags.Contains("ready") && !registration.Tags.Contains("cache")));
