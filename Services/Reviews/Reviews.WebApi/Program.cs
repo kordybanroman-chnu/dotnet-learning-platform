@@ -2,15 +2,18 @@ using Reviews.Application;
 using Reviews.Application.Reviews.Mapping;
 using Reviews.Infrastructure;
 using Reviews.Infrastructure.Seeding;
+using Platform.EventBus;
 using Platform.ServiceDefaults;
 using Reviews.WebApi;
 using Reviews.WebApi.Grpc;
 using Reviews.WebApi.HealthChecks;
+using Reviews.WebApi.IntegrationEvents;
 using Reviews.WebApi.Metrics;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
+builder.AddEventBus();
 builder.Services.AddGrpc(options => options.Interceptors.Add<GrpcLoggingInterceptor>());
 
 _ = builder.Configuration.GetConnectionString("ReviewsMongo")
@@ -33,6 +36,8 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddSingleton<ReviewMetrics>();
 builder.Services.AddHostedService<ReviewMetricsPoller>();
+builder.Services.AddScoped<CourseRenamedHandler>();
+builder.Services.AddHostedService<CatalogEventsConsumer>();
 builder.Services.AddHealthChecks()
     .AddReviewsHealthChecks();
 builder.Services.AddGrpcHealthChecks(options =>

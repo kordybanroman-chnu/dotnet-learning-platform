@@ -52,3 +52,9 @@ public sealed class UpdateCoursePriceDto
     [Range(typeof(decimal), "0.01", "1000000")]
     public decimal Price { get; set; }
 }
+
+public sealed class UpdateCourseTitleDto
+{
+    [Required, MaxLength(200)]
+    public string Title { get; set; } = "";
+}

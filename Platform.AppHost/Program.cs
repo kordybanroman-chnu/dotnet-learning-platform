@@ -14,20 +14,30 @@ var reviewsDb = mongo.AddDatabase("ReviewsMongo");
 var redis = builder.AddRedis("redis")
     .WithDataVolume();
 
+var rabbit = builder.AddRabbitMQ("messaging")
+    .WithDataVolume()
+    .WithManagementPlugin();
+
 var enrollments = builder.AddProject<Projects.Enrollments_Api>("enrollments-api")
     .WithReference(enrollmentsDb)
+    .WithReference(rabbit)
     .WaitFor(enrollmentsDb)
+    .WaitFor(rabbit)
     .WithHttpHealthCheck("/health", endpointName: "http");
 
 var catalog = builder.AddProject<Projects.Catalog_Api>("catalog-api")
     .WithReference(catalogDb)
     .WaitFor(catalogDb)
     .WithReference(redis)
+    .WithReference(rabbit)
+    .WaitFor(rabbit)
     .WithHttpHealthCheck("/health", endpointName: "http");
 
 var reviews = builder.AddProject<Projects.Reviews_WebApi>("reviews-api")
     .WithReference(reviewsDb)
+    .WithReference(rabbit)
     .WaitFor(reviewsDb)
+    .WaitFor(rabbit)
     .WithHttpHealthCheck("/health", endpointName: "http");
 
 var aggregator = builder.AddProject<Projects.Platform_Aggregator>("aggregator")

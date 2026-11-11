@@ -7,6 +7,8 @@ using Catalog.Domain;
 using FluentValidation;
 using FluentValidation.Results;
 using Microsoft.Extensions.Logging;
+using Platform.EventBus;
+using Platform.EventBus.Events;
 
 namespace Catalog.Bll;
 
@@ -19,6 +21,7 @@ public interface ICourseService
         string categorySlug, DateTime since, CancellationToken ct = default);
     Task<CourseDto> CreateAsync(CreateCourseDto input, CancellationToken ct = default);
     Task UpdatePriceAsync(long id, decimal price, CancellationToken ct = default);
+    Task UpdateTitleAsync(long id, string title, CancellationToken ct = default);
     Task DeleteAsync(long id, CancellationToken ct = default);
 }
 
@@ -26,6 +29,8 @@ public sealed class CourseService(
     IUnitOfWork uow,
     IMapper mapper,
     ICatalogCache cache,
+    IEventPublisher publisher,
+    ICorrelationAccessor correlation,
     ILogger<CourseService> logger) : ICourseService
 {
     private static readonly ActivitySource ActivitySource = new("Catalog.Api");
@@ -132,6 +137,7 @@ public sealed class CourseService(
 
         var course = await uow.Courses.GetByIdAsync(id, ct)
             ?? throw new NotFoundException($"Course {id} not found");
+        var oldPrice = course.Price;
         course.ChangePrice(price);
         await uow.SaveChangesAsync(ct);
 
@@ -139,7 +145,44 @@ public sealed class CourseService(
         await cache.InvalidateAsync(
             CacheKeys.InstructorCourses(course.InstructorId), "CoursePriceUpdated", ct);
 
+        await publisher.PublishAsync(
+            new CoursePriceChangedEvent(id, course.Title, oldPrice, price)
+            {
+                CorrelationId = correlation.CorrelationId
+            },
+            RabbitMqTopology.CatalogExchange,
+            CourseRoutingKeys.CoursePriceChanged,
+            ct);
+
         logger.LogInformation("Updated course {CourseId} price to {Price}", id, price);
+    }
+
+    public async Task UpdateTitleAsync(long id, string title, CancellationToken ct = default)
+    {
+        using var activity = ActivitySource.StartActivity("UpdateCourseTitle");
+        activity?.SetTag("course.id", id);
+
+        var course = await uow.Courses.GetByIdAsync(id, ct)
+            ?? throw new NotFoundException($"Course {id} not found");
+        var oldTitle = course.Title;
+        course.ChangeTitle(title);
+        await uow.SaveChangesAsync(ct);
+
+        await cache.InvalidateAsync(CacheKeys.Course(id), "CourseRenamed", ct);
+        await cache.InvalidateAsync(
+            CacheKeys.InstructorCourses(course.InstructorId), "CourseRenamed", ct);
+
+        await publisher.PublishAsync(
+            new CourseRenamedEvent(id, oldTitle, course.Title)
+            {
+                CorrelationId = correlation.CorrelationId
+            },
+            RabbitMqTopology.CatalogExchange,
+            CourseRoutingKeys.CourseRenamed,
+            ct);
+
+        logger.LogInformation("Renamed course {CourseId} from {OldTitle} to {NewTitle}",
+            id, oldTitle, course.Title);
     }
 
     public async Task DeleteAsync(long id, CancellationToken ct = default)

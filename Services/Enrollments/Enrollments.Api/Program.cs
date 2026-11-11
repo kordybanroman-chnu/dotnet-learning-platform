@@ -1,14 +1,17 @@
 using Enrollments.Api;
 using Enrollments.Api.Grpc;
 using Enrollments.Api.HealthChecks;
+using Enrollments.Api.IntegrationEvents;
 using Enrollments.Api.Metrics;
 using Enrollments.Bll;
 using Enrollments.Dal;
+using Platform.EventBus;
 using Platform.ServiceDefaults;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
+builder.AddEventBus();
 builder.Services.AddGrpc(options => options.Interceptors.Add<GrpcLoggingInterceptor>());
 
 var connectionString = builder.Configuration.GetConnectionString("EnrollmentsDb")
@@ -24,6 +27,9 @@ builder.Services.AddScoped<IUnitOfWork>(_ => new UnitOfWork(connectionString));
 builder.Services.AddScoped<IEnrollmentService, EnrollmentService>();
 builder.Services.AddScoped<IStudentService, StudentService>();
 builder.Services.AddScoped<ICourseService, CourseService>();
+builder.Services.AddScoped<CoursePriceChangedHandler>();
+builder.Services.AddScoped<CourseRenamedHandler>();
+builder.Services.AddHostedService<CatalogEventsConsumer>();
 builder.Services.AddSingleton<EnrollmentMetrics>();
 builder.Services.AddHostedService<EnrollmentMetricsPoller>();
 builder.Services.AddAutoMapper(cfg =>

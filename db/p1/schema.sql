@@ -55,6 +55,12 @@ CREATE TABLE dbo.EnrollmentItems (
     Units        INT           NOT NULL CHECK (Units > 0),
     PRIMARY KEY (EnrollmentId, CourseId)
 );
+
+CREATE TABLE dbo.ProcessedEvents (
+    EventId     UNIQUEIDENTIFIER PRIMARY KEY,
+    EventType   NVARCHAR(200) NOT NULL,
+    ProcessedAt DATETIME2     NOT NULL DEFAULT SYSUTCDATETIME()
+);
 GO
 
 -- Індекс під запит "записи студента з певним статусом" (сторінка "Мої курси").

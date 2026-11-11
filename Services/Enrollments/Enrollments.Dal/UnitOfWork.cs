@@ -8,6 +8,7 @@ public interface IUnitOfWork : IAsyncDisposable
     IStudentRepository Students { get; }
     IEnrollmentRepository Enrollments { get; }
     ICourseRepository Courses { get; }
+    IProcessedEventRepository ProcessedEvents { get; }
     Task BeginTransactionAsync(IsolationLevel level = IsolationLevel.ReadCommitted, CancellationToken ct = default);
     Task CommitAsync(CancellationToken ct = default);
     Task RollbackAsync(CancellationToken ct = default);
@@ -24,11 +25,13 @@ public sealed class UnitOfWork : IUnitOfWork
         Students = new StudentRepository(_connection, () => _transaction);
         Enrollments = new EnrollmentRepository(_connection, () => _transaction);
         Courses = new CourseRepository(_connection, () => _transaction);
+        ProcessedEvents = new ProcessedEventRepository(_connection, () => _transaction);
     }
 
     public IStudentRepository Students { get; }
     public IEnrollmentRepository Enrollments { get; }
     public ICourseRepository Courses { get; }
+    public IProcessedEventRepository ProcessedEvents { get; }
 
     public async Task BeginTransactionAsync(IsolationLevel level = IsolationLevel.ReadCommitted, CancellationToken ct = default)
     {

@@ -8,11 +8,13 @@ using Catalog.Bll.Validators;
 using Catalog.Dal;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
+using Platform.EventBus;
 using Platform.ServiceDefaults;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
+builder.AddEventBus();
 builder.AddRedisDistributedCache("redis", settings => settings.DisableHealthChecks = true);
 builder.Services.AddMemoryCache(options => options.SizeLimit = 10_000);
 builder.Services.AddSingleton<CacheMetrics>();

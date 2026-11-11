@@ -50,6 +50,26 @@ public sealed class CoursesController(ICourseService service, CatalogMetrics met
         }
     }
 
+    [HttpPut("{id:long}/title")]
+    public async Task<IActionResult> UpdateTitle(
+        long id,
+        UpdateCourseTitleDto input,
+        CancellationToken ct)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        var success = false;
+        try
+        {
+            await service.UpdateTitleAsync(id, input.Title, ct);
+            success = true;
+            return NoContent();
+        }
+        finally
+        {
+            metrics.RecordDuration("rename", success, stopwatch.Elapsed.TotalMilliseconds);
+        }
+    }
+
     [HttpPut("{id:long}/price")]
     public async Task<IActionResult> UpdatePrice(
         long id,

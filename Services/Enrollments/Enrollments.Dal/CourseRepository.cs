@@ -7,6 +7,8 @@ namespace Enrollments.Dal;
 public interface ICourseRepository : IGenericRepository<Course>
 {
     Task DecreaseSeatsAsync(long courseId, int units, CancellationToken ct = default);
+    Task<int> UpdateSnapshotAsync(
+        long courseId, string? title, decimal? price, CancellationToken ct = default);
 }
 
 public sealed class CourseRepository(SqlConnection connection, Func<SqlTransaction?> currentTransaction)
@@ -50,5 +52,21 @@ public sealed class CourseRepository(SqlConnection connection, Func<SqlTransacti
         {
             throw Map(ex);
         }
+    }
+
+    public async Task<int> UpdateSnapshotAsync(
+        long courseId, string? title, decimal? price, CancellationToken ct = default)
+    {
+        await EnsureOpenAsync(ct);
+        return await Connection.ExecuteAsync(new CommandDefinition(
+            """
+            UPDATE dbo.Courses
+            SET Title = COALESCE(@Title, Title),
+                Price = COALESCE(@Price, Price),
+                UpdatedAt = SYSUTCDATETIME()
+            WHERE Id = @Id
+            """,
+            new { Id = courseId, Title = title, Price = price },
+            Transaction, cancellationToken: ct));
     }
 }

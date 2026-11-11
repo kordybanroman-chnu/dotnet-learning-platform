@@ -94,6 +94,7 @@ public static class Extensions
                     .AddSource("Enrollments.Api")
                     .AddSource("Catalog.Api")
                     .AddSource("Reviews.WebApi")
+                    .AddSource("Platform.Messaging")
                     .AddSource("Grpc.Net.Client")
                     .AddSource("Grpc.AspNetCore.Server")
                     .AddSource("MongoDB.Driver.Core.Extensions.DiagnosticSources")
