@@ -12,6 +12,7 @@ public sealed class Review : BaseEntity
 
     public int CourseId { get; private set; }
     public string CourseTitle { get; private set; } = "";
+    public DateTime? CourseTitleUpdatedAt { get; private set; }
     public Author Author { get; private set; } = null!;
     public Rating Rating { get; private set; } = null!;
     public string Text { get; private set; } = "";
@@ -67,5 +68,16 @@ public sealed class Review : BaseEntity
             throw new DomainException("Photo url is required");
         _photos.Add(url.Trim());
         Touch();
+    }
+
+    public void ApplyCourseTitle(string title, DateTime occurredAt)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+            throw new DomainException("CourseTitle is required");
+        if (CourseTitleUpdatedAt is not null && CourseTitleUpdatedAt > occurredAt)
+            return;
+
+        CourseTitle = title.Trim();
+        CourseTitleUpdatedAt = occurredAt;
     }
 }

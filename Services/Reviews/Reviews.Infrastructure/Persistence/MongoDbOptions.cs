@@ -4,4 +4,5 @@ public sealed class MongoDbOptions
 {
     public string ConnectionString { get; set; } = "";
     public string DatabaseName { get; set; } = "";
+    public string? ReplicaSet { get; set; }
 }

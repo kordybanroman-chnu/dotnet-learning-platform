@@ -15,11 +15,38 @@ public sealed class CourseRenamedHandler(
 
     public async Task HandleAsync(CourseRenamedEvent @event, CancellationToken ct)
     {
+        if (!context.SupportsTransactions)
+        {
+            await ApplyAsync(@event, null, ct);
+            return;
+        }
+
+        using var session = await context.Client.StartSessionAsync(cancellationToken: ct);
+        session.StartTransaction();
+        try
+        {
+            await ApplyAsync(@event, session, ct);
+            await session.CommitTransactionAsync(ct);
+        }
+        catch
+        {
+            await session.AbortTransactionAsync(ct);
+            throw;
+        }
+    }
+
+    private async Task ApplyAsync(
+        CourseRenamedEvent @event, IClientSessionHandle? session, CancellationToken ct)
+    {
         var processed = context.Database.GetCollection<BsonDocument>(ProcessedEventsCollection);
         var eventId = @event.EventId.ToString();
         var eventFilter = Builders<BsonDocument>.Filter.Eq("_id", eventId);
 
-        if (await processed.CountDocumentsAsync(eventFilter, cancellationToken: ct) > 0)
+        var alreadyProcessed = session is null
+            ? await processed.CountDocumentsAsync(eventFilter, cancellationToken: ct) > 0
+            : await processed.CountDocumentsAsync(session, eventFilter, cancellationToken: ct) > 0;
+
+        if (alreadyProcessed)
         {
             logger.LogInformation(
                 "Duplicate {EventType} {EventId} for course {CourseId} skipped",
@@ -27,32 +54,36 @@ public sealed class CourseRenamedHandler(
             return;
         }
 
-        var result = await context.Reviews.UpdateManyAsync(
-            Builders<Review>.Filter.Eq(r => r.CourseId, (int)@event.CourseId),
-            Builders<Review>.Update.Set(r => r.CourseTitle, @event.NewTitle),
-            cancellationToken: ct);
+        var filter = Builders<Review>.Filter.Eq(r => r.CourseId, (int)@event.CourseId)
+                     & Builders<Review>.Filter.Or(
+                         Builders<Review>.Filter.Eq(r => r.CourseTitleUpdatedAt, (DateTime?)null),
+                         Builders<Review>.Filter.Lte(
+                             r => r.CourseTitleUpdatedAt, @event.OccurredAt));
 
-        try
+        var update = Builders<Review>.Update
+            .Set(r => r.CourseTitle, @event.NewTitle)
+            .Set(r => r.CourseTitleUpdatedAt, (DateTime?)@event.OccurredAt);
+
+        var result = session is null
+            ? await context.Reviews.UpdateManyAsync(filter, update, cancellationToken: ct)
+            : await context.Reviews.UpdateManyAsync(session, filter, update, cancellationToken: ct);
+
+        var document = new BsonDocument
         {
-            await processed.InsertOneAsync(
-                new BsonDocument
-                {
-                    ["_id"] = eventId,
-                    ["eventType"] = nameof(CourseRenamedEvent),
-                    ["processedAt"] = @event.OccurredAt
-                },
-                cancellationToken: ct);
-        }
-        catch (MongoWriteException ex) when (ex.WriteError?.Category == ServerErrorCategory.DuplicateKey)
-        {
-            logger.LogInformation(
-                "Duplicate {EventType} {EventId} for course {CourseId} was recorded concurrently",
-                nameof(CourseRenamedEvent), @event.EventId, @event.CourseId);
-        }
+            ["_id"] = eventId,
+            ["eventId"] = eventId,
+            ["eventType"] = nameof(CourseRenamedEvent),
+            ["processedAt"] = @event.OccurredAt
+        };
+
+        if (session is null)
+            await processed.InsertOneAsync(document, cancellationToken: ct);
+        else
+            await processed.InsertOneAsync(session, document, cancellationToken: ct);
 
         logger.LogInformation(
-            "Applied {EventType} {EventId} to course {CourseId}: title {OldTitle} -> {NewTitle}, reviews updated {MatchedCount}",
+            "Applied {EventType} {EventId} to course {CourseId}: title {OldTitle} -> {NewTitle}, reviews updated {MatchedCount}, CorrelationId {CorrelationId}",
             nameof(CourseRenamedEvent), @event.EventId, @event.CourseId,
-            @event.OldTitle, @event.NewTitle, result.MatchedCount);
+            @event.OldTitle, @event.NewTitle, result.MatchedCount, @event.CorrelationId);
     }
 }
