@@ -135,7 +135,7 @@ dotnet user-secrets set "Parameters:mongo-password" "Passw0rd1" --project Platfo
 dotnet run --project Platform.AppHost
 ```
 
-`AppHost` створює контейнери SQL Server, MongoDB і RabbitMQ з іменованими volume (`WithDataVolume`), тому дані переживають перезапуск. Паролі Mongo задані параметрами, інакше після перезапуску з volume новий згенерований пароль не збігався б з користувачем у базі. Mongo слухає `localhost:27017` і працює як single-node replica set `rs0`: контейнер створює keyfile, `mongo-init` викликає `rs.initiate`. Порядок запуску заданий `WaitFor`: БД → `enrollments-api`, `catalog-api`, `reviews-api` → `aggregator` → `gateway`. Gateway слухає `http://localhost:5000`; посилання на Dashboard з токеном друкується в консолі.
+`AppHost` створює контейнери SQL Server, MongoDB і RabbitMQ з іменованими volume (`WithDataVolume`), тому дані переживають перезапуск. Паролі Mongo задані параметрами, інакше після перезапуску з volume новий згенерований пароль не збігався б з користувачем у базі. Пароль Mongo не повинен містити `@`, `:` або `/`: Aspire вставляє його в URI без percent-encoding, і `mongosh` не розбере адресу. Mongo слухає `localhost:27017` і працює як single-node replica set `rs0`: контейнер створює keyfile, `mongo-init` викликає `rs.initiate`. Порядок запуску заданий `WaitFor`: БД → `enrollments-api`, `catalog-api`, `reviews-api` → `aggregator` → `gateway`. Gateway слухає `http://localhost:5000`; посилання на Dashboard з токеном друкується в консолі.
 
 `CatalogDb` створюється міграцією `InitialCreate`, Catalog і Reviews наповнюють свої колекції під час старту. `EnrollmentsDb` створює Aspire, а таблиці треба застосувати один раз:
 
