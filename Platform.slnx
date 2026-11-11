@@ -14,6 +14,7 @@
   <Project Path="Services/Reviews/Reviews.Domain.Tests/Reviews.Domain.Tests.csproj" />
   <Project Path="Platform.ServiceDefaults/Platform.ServiceDefaults.csproj" />
   <Project Path="Platform.EventBus/Platform.EventBus.csproj" />
+  <Project Path="Platform.EventBus.Tests/Platform.EventBus.Tests.csproj" />
   <Project Path="Platform.ApiGateway/Platform.ApiGateway.csproj" />
   <Project Path="Platform.Aggregator/Platform.Aggregator.csproj" />
   <Project Path="Platform.AppHost/Platform.AppHost.csproj" />

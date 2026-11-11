@@ -40,6 +40,34 @@ public sealed class ReviewTests
     }
 
     [Fact]
+    public void ApplyCourseTitle_NewerEventUpdatesTitle()
+    {
+        var review = new Review(
+            101, "Основи C#", new Author("u-1", "Олена"), new Rating(5), "Текст");
+        var occurredAt = new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Utc);
+
+        review.ApplyCourseTitle("Основи C# 12", occurredAt);
+
+        Assert.Equal("Основи C# 12", review.CourseTitle);
+        Assert.Equal(occurredAt, review.CourseTitleUpdatedAt);
+    }
+
+    [Fact]
+    public void ApplyCourseTitle_OlderEventDoesNotOverwriteNewerTitle()
+    {
+        var review = new Review(
+            101, "Основи C#", new Author("u-1", "Олена"), new Rating(5), "Текст");
+        var newer = new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Utc);
+        var older = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        review.ApplyCourseTitle("Основи C# 12", newer);
+        review.ApplyCourseTitle("Стара назва", older);
+
+        Assert.Equal("Основи C# 12", review.CourseTitle);
+        Assert.Equal(newer, review.CourseTitleUpdatedAt);
+    }
+
+    [Fact]
     public void AddComment_EmptyText_Throws()
     {
         var review = new Review(
