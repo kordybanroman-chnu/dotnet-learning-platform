@@ -40,13 +40,31 @@ public sealed class EventSerializationTests
     }
 
     [Fact]
-    public void CreatedAndDeletedEvents_AreRecordsWithDistinctEventIds()
+    public void CreatedAndDeletedEvents_RoundTripWithDistinctEventIds()
     {
-        var created = new CourseCreatedEvent(102, "ASP.NET Core API", 1800m);
-        var deleted = new CourseDeletedEvent(102, "ASP.NET Core API");
+        var created = new CourseCreatedEvent(102, "ASP.NET Core API", 1800m)
+        {
+            CorrelationId = "corr-create"
+        };
+        var deleted = new CourseDeletedEvent(102, "ASP.NET Core API")
+        {
+            CorrelationId = "corr-delete"
+        };
+
+        var createdJson = JsonSerializer.SerializeToUtf8Bytes(created, EventBusJson.Options);
+        var deletedJson = JsonSerializer.SerializeToUtf8Bytes(deleted, EventBusJson.Options);
+
+        var restoredCreated = JsonSerializer.Deserialize<CourseCreatedEvent>(
+            createdJson, EventBusJson.Options);
+        var restoredDeleted = JsonSerializer.Deserialize<CourseDeletedEvent>(
+            deletedJson, EventBusJson.Options);
 
         Assert.NotEqual(created.EventId, deleted.EventId);
         Assert.NotEqual(Guid.Empty, created.EventId);
-        Assert.Equal(created, created with { });
+        Assert.Equal(created.EventId, restoredCreated!.EventId);
+        Assert.Equal(created.CourseId, restoredCreated.CourseId);
+        Assert.Equal("corr-create", restoredCreated.CorrelationId);
+        Assert.Equal(deleted.EventId, restoredDeleted!.EventId);
+        Assert.Equal("corr-delete", restoredDeleted.CorrelationId);
     }
 }
