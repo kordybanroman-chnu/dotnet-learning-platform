@@ -24,7 +24,7 @@ app.Use(async (context, next) =>
     finally
     {
         stopwatch.Stop();
-        var route = context.GetReverseProxyFeature()?.Route.Config.RouteId;
+        var route = context.Features.Get<IReverseProxyFeature>()?.Route.Config.RouteId ?? "-";
         app.Logger.LogInformation(
             "{Method} {Path} from {ClientIp} -> route {Route}: {StatusCode} in {ElapsedMilliseconds} ms",
             context.Request.Method, context.Request.Path, context.Connection.RemoteIpAddress,

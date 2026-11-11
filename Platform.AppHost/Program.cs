@@ -16,17 +16,19 @@ var redis = builder.AddRedis("redis")
 
 var enrollments = builder.AddProject<Projects.Enrollments_Api>("enrollments-api")
     .WithReference(enrollmentsDb)
-    .WaitFor(enrollmentsDb);
+    .WaitFor(enrollmentsDb)
+    .WithHttpHealthCheck("/health", endpointName: "http");
 
 var catalog = builder.AddProject<Projects.Catalog_Api>("catalog-api")
     .WithReference(catalogDb)
     .WaitFor(catalogDb)
     .WithReference(redis)
-    .WaitFor(redis);
+    .WithHttpHealthCheck("/health", endpointName: "http");
 
 var reviews = builder.AddProject<Projects.Reviews_WebApi>("reviews-api")
     .WithReference(reviewsDb)
-    .WaitFor(reviewsDb);
+    .WaitFor(reviewsDb)
+    .WithHttpHealthCheck("/health", endpointName: "http");
 
 var aggregator = builder.AddProject<Projects.Platform_Aggregator>("aggregator")
     .WithReference(enrollments)
@@ -35,8 +37,7 @@ var aggregator = builder.AddProject<Projects.Platform_Aggregator>("aggregator")
     .WithReference(redis)
     .WaitFor(enrollments)
     .WaitFor(catalog)
-    .WaitFor(reviews)
-    .WaitFor(redis);
+    .WithHttpHealthCheck("/health", endpointName: "http");
 
 builder.AddProject<Projects.Platform_ApiGateway>("gateway")
     .WithHttpEndpoint(port: 5000, name: "public")
@@ -44,9 +45,6 @@ builder.AddProject<Projects.Platform_ApiGateway>("gateway")
     .WithReference(catalog)
     .WithReference(reviews)
     .WithReference(aggregator)
-    .WaitFor(enrollments)
-    .WaitFor(catalog)
-    .WaitFor(reviews)
-    .WaitFor(aggregator);
+    .WithHttpHealthCheck("/health", endpointName: "http");
 
 builder.Build().Run();

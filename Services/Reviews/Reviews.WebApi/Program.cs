@@ -1,11 +1,12 @@
 using Reviews.Application;
 using Reviews.Application.Reviews.Mapping;
 using Reviews.Infrastructure;
-using Reviews.Infrastructure.HealthChecks;
 using Reviews.Infrastructure.Seeding;
 using Platform.ServiceDefaults;
 using Reviews.WebApi;
 using Reviews.WebApi.Grpc;
+using Reviews.WebApi.HealthChecks;
+using Reviews.WebApi.Metrics;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -30,8 +31,13 @@ builder.Services.AddAutoMapper(configuration =>
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddSingleton<ReviewMetrics>();
+builder.Services.AddHostedService<ReviewMetricsPoller>();
 builder.Services.AddHealthChecks()
-    .AddCheck<MongoHealthCheck>("mongodb");
+    .AddReviewsHealthChecks();
+builder.Services.AddGrpcHealthChecks(options =>
+    options.Services.Map("", registration =>
+        registration.Tags.Contains("ready") && !registration.Tags.Contains("cache")));
 builder.Services.AddProblemDetails(options =>
 {
     options.CustomizeProblemDetails = context =>
@@ -59,6 +65,7 @@ app.UseSwagger();
 app.UseSwaggerUI();
 app.MapControllers();
 app.MapGrpcService<ReviewsGrpcService>();
+app.MapGrpcHealthChecksService();
 app.MapDefaultEndpoints();
 
 app.Run();

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
 using Reviews.Application.Common.Models;
@@ -6,11 +7,12 @@ using Reviews.Application.Reviews.Commands.DeleteReview;
 using Reviews.Application.Reviews.Commands.UpdateReview;
 using Reviews.Application.Reviews.Queries.GetReviewById;
 using Reviews.Application.Reviews.Queries.GetReviewsList;
+using Reviews.WebApi.Metrics;
 
 namespace Reviews.WebApi.Controllers;
 
 [Route("api/reviews")]
-public sealed class ReviewsController(ISender mediator) : ApiController(mediator)
+public sealed class ReviewsController(ISender mediator, ReviewMetrics metrics) : ApiController(mediator)
 {
     [HttpGet]
     [ProducesResponseType<PagedResult<ReviewDto>>(StatusCodes.Status200OK)]
@@ -42,8 +44,19 @@ public sealed class ReviewsController(ISender mediator) : ApiController(mediator
     public async Task<ActionResult<ReviewDto>> Create(
         CreateReviewCommand command, CancellationToken ct)
     {
-        var created = await Mediator.Send(command, ct);
-        return CreatedAtAction(nameof(GetById), new { id = created.Id }, created);
+        var stopwatch = Stopwatch.StartNew();
+        var success = false;
+        try
+        {
+            var created = await Mediator.Send(command, ct);
+            metrics.Created(created.Rating);
+            success = true;
+            return CreatedAtAction(nameof(GetById), new { id = created.Id }, created);
+        }
+        finally
+        {
+            metrics.RecordDuration("create", success, stopwatch.Elapsed.TotalMilliseconds);
+        }
     }
 
     [HttpPut("{id}")]
@@ -61,8 +74,20 @@ public sealed class ReviewsController(ISender mediator) : ApiController(mediator
             ? version
             : null;
 
-        return Ok(await Mediator.Send(
-            new UpdateReviewCommand(id, body.Rating, body.Text, expectedVersion), ct));
+        var stopwatch = Stopwatch.StartNew();
+        var success = false;
+        try
+        {
+            var updated = await Mediator.Send(
+                new UpdateReviewCommand(id, body.Rating, body.Text, expectedVersion), ct);
+            metrics.Updated(updated.Rating);
+            success = true;
+            return Ok(updated);
+        }
+        finally
+        {
+            metrics.RecordDuration("update", success, stopwatch.Elapsed.TotalMilliseconds);
+        }
     }
 
     [HttpDelete("{id}")]
@@ -72,8 +97,19 @@ public sealed class ReviewsController(ISender mediator) : ApiController(mediator
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Delete(string id, CancellationToken ct)
     {
-        await Mediator.Send(new DeleteReviewCommand(id), ct);
-        return NoContent();
+        var stopwatch = Stopwatch.StartNew();
+        var success = false;
+        try
+        {
+            await Mediator.Send(new DeleteReviewCommand(id), ct);
+            metrics.Deleted();
+            success = true;
+            return NoContent();
+        }
+        finally
+        {
+            metrics.RecordDuration("delete", success, stopwatch.Elapsed.TotalMilliseconds);
+        }
     }
 }
 

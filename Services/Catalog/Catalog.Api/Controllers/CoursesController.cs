@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using Catalog.Api.Metrics;
 using Catalog.Bll;
 using FluentValidation;
 using FluentValidation.Results;
@@ -7,7 +9,7 @@ namespace Catalog.Api.Controllers;
 
 [ApiController]
 [Route("api/courses")]
-public sealed class CoursesController(ICourseService service) : ControllerBase
+public sealed class CoursesController(ICourseService service, CatalogMetrics metrics) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<PagedResult<CourseListItemDto>>> GetList(
@@ -29,12 +31,23 @@ public sealed class CoursesController(ICourseService service) : ControllerBase
         [FromServices] IValidator<CreateCourseDto> validator,
         CancellationToken ct)
     {
-        var result = await validator.ValidateAsync(input, ct);
-        if (!result.IsValid)
-            return ValidationErrors(result);
+        var stopwatch = Stopwatch.StartNew();
+        var success = false;
+        try
+        {
+            var result = await validator.ValidateAsync(input, ct);
+            if (!result.IsValid)
+                return ValidationErrors(result);
 
-        var created = await service.CreateAsync(input, ct);
-        return CreatedAtAction(nameof(GetById), new { id = created.Id }, created);
+            var created = await service.CreateAsync(input, ct);
+            metrics.CourseCreated(input.Syllabus is not null, input.CategoryIds.Count);
+            success = true;
+            return CreatedAtAction(nameof(GetById), new { id = created.Id }, created);
+        }
+        finally
+        {
+            metrics.RecordDuration("create", success, stopwatch.Elapsed.TotalMilliseconds);
+        }
     }
 
     [HttpPut("{id:long}/price")]
@@ -44,19 +57,41 @@ public sealed class CoursesController(ICourseService service) : ControllerBase
         [FromServices] IValidator<UpdateCoursePriceDto> validator,
         CancellationToken ct)
     {
-        var result = await validator.ValidateAsync(input, ct);
-        if (!result.IsValid)
-            return ValidationErrors(result);
+        var stopwatch = Stopwatch.StartNew();
+        var success = false;
+        try
+        {
+            var result = await validator.ValidateAsync(input, ct);
+            if (!result.IsValid)
+                return ValidationErrors(result);
 
-        await service.UpdatePriceAsync(id, input.Price, ct);
-        return NoContent();
+            await service.UpdatePriceAsync(id, input.Price, ct);
+            metrics.PriceUpdated(input.Price);
+            success = true;
+            return NoContent();
+        }
+        finally
+        {
+            metrics.RecordDuration("update-price", success, stopwatch.Elapsed.TotalMilliseconds);
+        }
     }
 
     [HttpDelete("{id:long}")]
     public async Task<IActionResult> Delete(long id, CancellationToken ct)
     {
-        await service.DeleteAsync(id, ct);
-        return NoContent();
+        var stopwatch = Stopwatch.StartNew();
+        var success = false;
+        try
+        {
+            await service.DeleteAsync(id, ct);
+            metrics.CourseDeleted();
+            success = true;
+            return NoContent();
+        }
+        finally
+        {
+            metrics.RecordDuration("delete", success, stopwatch.Elapsed.TotalMilliseconds);
+        }
     }
 
     private ActionResult ValidationErrors(ValidationResult result)

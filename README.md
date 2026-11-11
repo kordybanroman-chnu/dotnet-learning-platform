@@ -41,12 +41,12 @@
 ├── Platform.Aggregator/              gRPC-клієнти, агрегація картки запису, кеш відповідей
 ├── Services/
 │   ├── Enrollments/
-│   │   ├── Enrollments.Api/          контролери, Protos/, Grpc/, Program.cs
+│   │   ├── Enrollments.Api/          контролери, Protos/, Grpc/, Metrics/, HealthChecks/, Program.cs
 │   │   ├── Enrollments.Bll/
 │   │   ├── Enrollments.Dal/
 │   │   └── Enrollments.Domain/
 │   ├── Catalog/
-│   │   ├── Catalog.Api/          контролери, Protos/, Grpc/, Program.cs
+│   │   ├── Catalog.Api/          контролери, Protos/, Grpc/, Metrics/, HealthChecks/, Program.cs
 │   │   ├── Catalog.Bll/          сервіси, DTO, Caching/ (L1 + L2)
 │   │   ├── Catalog.Dal/
 │   │   │   ├── Configurations/
@@ -56,7 +56,7 @@
 │       ├── Reviews.Domain/     сутності, Value Objects, інтерфейси
 │       ├── Reviews.Application/ команди, запити, behaviors, DTO
 │       ├── Reviews.Infrastructure/ Mongo-контекст, BSON-мапінг, репозиторії, сідинг
-│       └── Reviews.WebApi/     контролери, Protos/, Grpc/, Program.cs, ProblemDetails
+│       └── Reviews.WebApi/     контролери, Protos/, Grpc/, Metrics/, HealthChecks/, Program.cs, ProblemDetails
 └── deploy/k8s/
 ```
 
@@ -211,7 +211,7 @@ curl -X DELETE '<catalog-api-url>/api/courses/101'
 
 BSON-мапінг заданий у `MongoMappings` без атрибутів у домені: camelCase, `IgnoreExtraElements`, приватні поля `_photos`/`_comments`, `Rating` через власний `RatingBsonSerializer` (у документі лишається `int`), `Author` через конструктор. Оновлення документа виконується `ReplaceOne` з фільтром за поточною версією, видалення - `DeleteOne` з тим самим фільтром; розбіжність версій дає `409`. GET повертає `ETag` з версією, PUT приймає `If-Match` і відхиляє застарілу версію.
 
-Мапінг помилок: `NotFoundException` → `404`, `ValidationException` і `DomainException` → `400`, `ConflictException` і `MongoWriteException` з `DuplicateKey` → `409`, інші `MongoWriteException` → `400`, `MongoConnectionException` і таймаут вибору сервера → `503`. Тіло - `ProblemDetails`; у Development додається `exception`, у логах - `CorrelationId` і `RequestPath`. `GET /health` виконує ping MongoDB через `MongoHealthCheck` і повертає `200 Healthy` або `503 Unhealthy`.
+Мапінг помилок: `NotFoundException` → `404`, `ValidationException` і `DomainException` → `400`, `ConflictException` і `MongoWriteException` з `DuplicateKey` → `409`, інші `MongoWriteException` → `400`, `MongoConnectionException` і таймаут вибору сервера → `503`. Тіло - `ProblemDetails`; у Development додається `exception`, у логах - `CorrelationId` і `RequestPath`. `GET /health/ready` виконує ping MongoDB через зареєстрований `AddMongoDb` з `IMongoDatabase` і повертає `200 Healthy`, `200 Degraded` або `503 Unhealthy`.
 
 Конфігурація - секція `MongoDb` (`ConnectionString`, `DatabaseName`). `ReviewsMongo` в AppHost - ім'я ресурсу й connection string; фактична назва бази задається `MongoDb:DatabaseName`. Development використовує `FeedbackDb`, Staging - `FeedbackDb_Staging`, Production - `FeedbackDb` з вимкненим сідингом (`Reviews:Seed = false`); рядок підключення перевизначається `ConnectionStrings__ReviewsMongo`. Старт:
 
@@ -295,6 +295,82 @@ curl -s 'http://localhost:5000/api/aggregator/enrollments/1/full'
 Другий GET курсу не має SQL-span у Traces. Trace агрегувального запиту містить gRPC client/server spans у одному ланцюжку Gateway → Aggregator → сервіси → БД. Вимірювання: HTTP-агрегація Лаб. 05 - 350 ms, gRPC з холодним кешем Catalog - 50.53 ms. В обох трейсах присутній SQL-запит Catalog, тому різниця показує транспорт, а не ефект кешу.
 
 Знімки: `docs/lab-06/dashboard-resources.png`, `docs/lab-06/trace-cache-hit.png`, `docs/lab-06/trace-grpc-aggregator.png`, `docs/lab-06/metrics-cache-hits.png`, `docs/lab-06/structured-logs-cache.png`. Повні команди й очікувані логи описані в `docs/lab-06/manual-checks.md`.
+
+## Резильєнтність, метрики та health checks (Лаб. 07)
+
+### Політики resilience для клієнтів Aggregator
+
+Усі клієнти створюються фабрикою `HttpClient`, тому глобальний Standard Resilience Handler з `ServiceDefaults` діє для HTTP- і gRPC-клієнтів. Для Aggregator політики задані окремо: спочатку `RemoveAllResilienceHandlers`, потім власний `AddStandardResilienceHandler`. Обробники не нашаровуються.
+
+| Клієнт | Роль | Retry | Затримка | Attempt / Total | Circuit breaker | gRPC retry |
+| --- | --- | --- | --- | --- | --- | --- |
+| Enrollments | критичний, джерело картки | 2 | 0.5 с, exponential + jitter | 5 с / 20 с | 0.5 / 10 запитів / 30 с / 10 с | 3 спроби, backoff 0.5–1 с, `Unavailable` |
+| Catalog | критичний, без курсів картка неповна | 2 | 0.5 с, exponential + jitter | 6 с / 25 с | 0.3 / 10 / 30 с / 15 с | 4 спроби, backoff 0.5–2 с, `Unavailable`, `ResourceExhausted` |
+| Reviews | некритичний, Aggregator повертає часткову відповідь | 1 | 0.5 с | 2 с / 6 с | 0.7 / 5 / 30 с / 5 с | 2 спроби, backoff 0.5–1 с, `Unavailable` |
+
+Значення `FailureRatio / MinimumThroughput / SamplingDuration / BreakDuration`. `MinimumThroughput` зменшено для навчального стенду: 10 для Enrollments і Catalog, 5 для Reviews, інакше breaker не встигає набрати статистику. `SamplingDuration = 30 с` більший за подвоєний найдовший `AttemptTimeout`.
+
+HTTP-повтори для небезпечних методів вимкнені глобально через `Retry.DisableForUnsafeHttpMethods()`. gRPC-виклики Aggregator є read-only RPC, тому для них діє окрема retry-політика за статусами `Unavailable` і `ResourceExhausted`.
+
+Переходи breaker пишуть `OnOpened` (Error), `OnClosed` (Information) і `OnHalfOpened` (Warning) через `ILogger`. Polly публікує метрики в Meter `Polly`, він доданий у `ServiceDefaults` разом з Meter-ами сервісів.
+
+### Бізнес-метрики
+
+Кожен сервіс має Singleton-клас у `Metrics/` з `IMeterFactory`. Meter названий за сервісом, усі інструменти мають префікс простору імен.
+
+| Сервіс | Meter | Лічильники | Гістограма | Gauge |
+| --- | --- | --- | --- | --- |
+| Enrollments | `Enrollments.Api` | `enrollments.created` (`status`), `enrollments.confirmed` (`status`), `enrollments.cancelled` (`status`) | `enrollments.operation.duration` (`operation`, `result`) | `enrollments.awaiting_validation` |
+| Catalog | `Catalog.Api` | `catalog.courses.created` (`has.detail`, `category.bucket`), `catalog.courses.price_updated` (`price.band`), `catalog.courses.deleted` (`source`) | `catalog.operation.duration` (`operation`, `result`) | `catalog.courses.total` |
+| Reviews | `Reviews.WebApi` | `reviews.created` (`rating`), `reviews.updated` (`rating`), `reviews.deleted` (`source`) | `reviews.operation.duration` (`operation`, `result`) | `reviews.total` |
+
+`result` має значення `success` або `failure`, тривалість записується в обох випадках. Gauge оновлюється раз на 15 с фоновим poller-ом і показує поточний стан бази. Теги з Id студента, курсу чи відгуку не використовуються: вони дали б високу кардинальність.
+
+Значення тегів:
+
+| Тег | Значення |
+| --- | --- |
+| `status` | `Submitted`, `SeatsConfirmed`, `Cancelled` |
+| `operation` | `create`, `confirm`, `cancel`, `update-price`, `update`, `delete` |
+| `result` | `success`, `failure` |
+| `has.detail` | `yes`, `no` |
+| `category.bucket` | `0`, `1`, `2+` |
+| `price.band` | `low`, `medium`, `high` |
+| `rating` | `1`..`5` |
+| `source` | `api` |
+
+### Health checks
+
+`ServiceDefaults` публікує endpoints у всіх середовищах:
+
+| Endpoint | Що перевіряє | Відповідь |
+| --- | --- | --- |
+| `/health/live` | лише процес, тег `live` | 200, без зовнішніх залежностей |
+| `/health/ready` | тег `ready`, JSON з деталями | 200, `Degraded` або 503 |
+| `/health/startup` | тег `startup` | 200 або 503 |
+| `/health` | усі перевірки, JSON | використовує AppHost |
+| `/alive` | аліас liveness | 200 |
+
+| Перевірка | Сервіс | Теги | Збій |
+| --- | --- | --- | --- |
+| `enrollments-db` | Enrollments | `database`, `sql`, `ready`, `startup` | `Unhealthy` |
+| `catalog-db` | Catalog | `database`, `sql`, `ready`, `startup` | `Unhealthy` |
+| `redis-cache` | Catalog, Aggregator | `cache`, `redis`, `ready` | `Degraded` |
+| `reviews-db` | Reviews | `database`, `mongodb`, `ready`, `startup` | `Unhealthy` |
+| `enrollments-api`, `catalog-api` | Aggregator | `grpc`, `downstream`, `ready` | `Unhealthy` |
+| `reviews-api` | Aggregator | `grpc`, `downstream`, `ready` | `Degraded` |
+
+SQL перевіряється запитом `SELECT 1` з таймаутом 5 с, MongoDB - `ping` з таймаутом 5 с, Redis - `PING` з таймаутом 3 с. Автоматичний Redis health check від Aspire вимкнений (`DisableHealthChecks = true`), щоб не було двох перевірок з різними статусами. Сервіси реалізують стандартний gRPC Health Checking Protocol, Aggregator викликає `Check` кожного downstream з дедлайном 2 с.
+
+gRPC health service віддає лише перевірки з тегом `ready` без `cache`. Тому Degraded Redis не перетворюється на `NotServing` і не робить Catalog недоступним для Aggregator. Перевірка каталогу в Aggregator залишається Healthy, поки живий SQL.
+
+Health-клієнти Aggregator не використовують resilience: перевірка має падати швидко, тому для них `RemoveAllResilienceHandlers` і явний дедлайн 2 с. Це не стосується бізнес-клієнтів, які мають повний набір політик.
+
+`Platform.AppHost` додає `.WithHttpHealthCheck("/health")` кожному проєкту. `WaitFor` залишений лише для критичних залежностей: БД, Enrollments і Catalog. Redis і Reviews підключаються через `WithReference` без `WaitFor`, тому їх недоступність на старті не блокує Catalog, Aggregator чи Gateway. Dashboard показує стан ресурсу, а деталі health checks доступні в його картці.
+
+Health endpoints відкриті й поза Development, як вимагає лабораторна. У Development JSON містить `exception.Message` і `description`; поза Development обидва поля дорівнюють `null`, щоб не віддавати текст винятків і внутрішні деталі. У production endpoints треба закрити на ingress або дозволити лише службі моніторингу.
+
+Команди перевірки: `docs/lab-07/manual-checks.md`. Карта критеріїв з точними файлами й символами: `docs/lab-07/criteria.md`.
 
 ## Розвиток (наступні лаби)
 

@@ -1,5 +1,7 @@
 using Catalog.Api;
 using Catalog.Api.Grpc;
+using Catalog.Api.HealthChecks;
+using Catalog.Api.Metrics;
 using Catalog.Bll;
 using Catalog.Bll.Caching;
 using Catalog.Bll.Validators;
@@ -11,7 +13,7 @@ using Platform.ServiceDefaults;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
-builder.AddRedisDistributedCache("redis");
+builder.AddRedisDistributedCache("redis", settings => settings.DisableHealthChecks = true);
 builder.Services.AddMemoryCache(options => options.SizeLimit = 10_000);
 builder.Services.AddSingleton<CacheMetrics>();
 builder.Services.AddScoped<ICatalogCache, TwoLevelCache>();
@@ -19,6 +21,14 @@ builder.Services.AddGrpc(options => options.Interceptors.Add<GrpcLoggingIntercep
 
 var connectionString = builder.Configuration.GetConnectionString("CatalogDb")
     ?? throw new InvalidOperationException("Connection string 'CatalogDb' is missing");
+var redisConnectionString = builder.Configuration.GetConnectionString("redis")
+    ?? throw new InvalidOperationException("Connection string 'redis' is missing");
+
+builder.Services.AddHealthChecks()
+    .AddCatalogHealthChecks(connectionString, redisConnectionString);
+builder.Services.AddGrpcHealthChecks(options =>
+    options.Services.Map("", registration =>
+        registration.Tags.Contains("ready") && !registration.Tags.Contains("cache")));
 
 builder.Services.AddDbContext<CatalogDbContext>(options =>
     options.UseSqlServer(connectionString, sql => sql.EnableRetryOnFailure()));
@@ -26,6 +36,8 @@ builder.Services.AddDbContext<CatalogDbContext>(options =>
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddScoped<ICourseService, CourseService>();
 builder.Services.AddScoped<ICategoryService, CategoryService>();
+builder.Services.AddSingleton<CatalogMetrics>();
+builder.Services.AddHostedService<CatalogMetricsPoller>();
 builder.Services.AddAutoMapper(configuration =>
 {
     var licenseKey = builder.Configuration["AutoMapper:LicenseKey"];
@@ -65,6 +77,7 @@ app.UseSwagger();
 app.UseSwaggerUI();
 app.MapControllers();
 app.MapGrpcService<CatalogGrpcService>();
+app.MapGrpcHealthChecksService();
 app.MapDefaultEndpoints();
 
 app.Run();

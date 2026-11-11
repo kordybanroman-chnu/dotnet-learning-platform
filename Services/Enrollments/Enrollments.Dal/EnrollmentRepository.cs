@@ -12,6 +12,7 @@ public interface IEnrollmentRepository : IGenericRepository<Enrollment>
     Task AddItemAsync(long enrollmentId, long courseId, int units, CancellationToken ct = default);
     Task ConfirmAsync(long enrollmentId, CancellationToken ct = default);
     Task CancelAsync(long enrollmentId, CancellationToken ct = default);
+    Task<int> CountByStatusAsync(string status, CancellationToken ct = default);
 }
 
 public sealed class EnrollmentRepository(SqlConnection connection, Func<SqlTransaction?> currentTransaction)
@@ -119,5 +120,16 @@ public sealed class EnrollmentRepository(SqlConnection connection, Func<SqlTrans
         {
             throw Map(ex);
         }
+    }
+
+    public async Task<int> CountByStatusAsync(string status, CancellationToken ct = default)
+    {
+        const string sql = """
+            SELECT COUNT(*) FROM dbo.Enrollments
+            WHERE Status = @Status AND IsDeleted = 0
+            """;
+        await EnsureOpenAsync(ct);
+        return await Connection.ExecuteScalarAsync<int>(new CommandDefinition(
+            sql, new { Status = status }, Transaction, cancellationToken: ct));
     }
 }

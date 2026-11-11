@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.ServiceDiscovery;
 using OpenTelemetry;
@@ -55,8 +57,9 @@ public static class Extensions
         {
             http.AddStandardResilienceHandler(options =>
             {
-                options.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(10);
-                options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(5);
+                options.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(30);
+                options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(10);
+                options.Retry.DisableForUnsafeHttpMethods();
             });
             http.AddServiceDiscovery();
             http.AddHttpMessageHandler<CorrelationIdHandler>();
@@ -83,7 +86,7 @@ public static class Extensions
                 metrics.AddAspNetCoreInstrumentation()
                     .AddHttpClientInstrumentation()
                     .AddRuntimeInstrumentation()
-                    .AddMeter("Catalog.Cache");
+                    .AddMeter("Catalog.Cache", "Enrollments.Api", "Catalog.Api", "Reviews.WebApi", "Polly");
             })
             .WithTracing(tracing =>
             {
@@ -117,15 +120,55 @@ public static class Extensions
 
     public static WebApplication MapDefaultEndpoints(this WebApplication app)
     {
-        if (app.Environment.IsDevelopment())
+        app.MapHealthChecks("/health", new HealthCheckOptions
         {
-            app.MapHealthChecks("/health");
-            app.MapHealthChecks("/alive", new HealthCheckOptions
-            {
-                Predicate = registration => registration.Tags.Contains("live")
-            });
-        }
+            ResponseWriter = WriteHealthResponse
+        });
+
+        app.MapHealthChecks("/health/live", new HealthCheckOptions
+        {
+            Predicate = registration => registration.Tags.Contains("live")
+        });
+
+        app.MapHealthChecks("/health/ready", new HealthCheckOptions
+        {
+            Predicate = registration => registration.Tags.Contains("ready"),
+            ResponseWriter = WriteHealthResponse
+        });
+
+        app.MapHealthChecks("/health/startup", new HealthCheckOptions
+        {
+            Predicate = registration => registration.Tags.Contains("startup"),
+            ResponseWriter = WriteHealthResponse
+        });
+
+        app.MapHealthChecks("/alive", new HealthCheckOptions
+        {
+            Predicate = registration => registration.Tags.Contains("live")
+        });
 
         return app;
+    }
+
+    private static Task WriteHealthResponse(HttpContext context, HealthReport report)
+    {
+        context.Response.ContentType = "application/json; charset=utf-8";
+        var includeDetails = context.RequestServices
+            .GetRequiredService<IHostEnvironment>()
+            .IsDevelopment();
+
+        return context.Response.WriteAsJsonAsync(new
+        {
+            status = report.Status.ToString(),
+            totalDurationMs = Math.Round(report.TotalDuration.TotalMilliseconds, 2),
+            checks = report.Entries.Select(entry => new
+            {
+                name = entry.Key,
+                status = entry.Value.Status.ToString(),
+                durationMs = Math.Round(entry.Value.Duration.TotalMilliseconds, 2),
+                description = includeDetails ? entry.Value.Description : null,
+                exception = includeDetails ? entry.Value.Exception?.Message : null
+            })
+        });
     }
 }
