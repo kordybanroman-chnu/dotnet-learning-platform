@@ -139,6 +139,13 @@ public abstract class RabbitMqEventConsumer(
 
         try
         {
+            var delay = TimeSpan.FromSeconds(1 << attempt);
+            logger.LogWarning(exception,
+                "Retry {Attempt}/{Max} for message {MessageId} {EventType} {EventId} in {Queue} after {DelaySeconds}s CorrelationId {CorrelationId}",
+                attempt + 1, MaxRetries, args.BasicProperties.MessageId, eventTypeName,
+                @event?.EventId, QueueName, delay.TotalSeconds, @event?.CorrelationId);
+            await Task.Delay(delay, args.CancellationToken);
+
             var headers = args.BasicProperties.Headers is null
                 ? new Dictionary<string, object?>()
                 : new Dictionary<string, object?>(args.BasicProperties.Headers);
@@ -148,11 +155,6 @@ public abstract class RabbitMqEventConsumer(
             await channel.BasicPublishAsync(
                 args.Exchange, args.RoutingKey, false, properties, args.Body, args.CancellationToken);
             await channel.BasicAckAsync(args.DeliveryTag, multiple: false);
-
-            logger.LogWarning(exception,
-                "Retry {Attempt}/{Max} for message {MessageId} {EventType} {EventId} in {Queue} CorrelationId {CorrelationId}",
-                attempt + 1, MaxRetries, args.BasicProperties.MessageId, eventTypeName,
-                @event?.EventId, QueueName, @event?.CorrelationId);
         }
         catch (Exception publishException)
         {
