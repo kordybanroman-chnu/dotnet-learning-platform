@@ -43,6 +43,7 @@ CREATE TABLE dbo.Courses (
     Title          NVARCHAR(200)   NOT NULL,
     Price          DECIMAL(18,2)   NOT NULL CHECK (Price > 0),
     SeatsAvailable INT             NOT NULL DEFAULT 0 CHECK (SeatsAvailable >= 0),
+    SourceUpdatedAt DATETIME2      NULL,
     UpdatedAt      DATETIME2       NULL,
     RowVersion     ROWVERSION NOT NULL
 );

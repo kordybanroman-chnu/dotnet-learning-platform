@@ -63,4 +63,6 @@ public static class CourseRoutingKeys
 {
     public const string CoursePriceChanged = "course.price_changed";
     public const string CourseRenamed = "course.renamed";
+    public const string CourseCreated = "course.created";
+    public const string CourseDeleted = "course.deleted";
 }

@@ -126,6 +126,15 @@ public sealed class CourseService(
         await cache.InvalidateAsync(
             CacheKeys.InstructorCourses(course.InstructorId), "CourseCreated", ct);
 
+        await publisher.PublishAsync(
+            new CourseCreatedEvent(course.Id, course.Title, course.Price)
+            {
+                CorrelationId = correlation.CorrelationId
+            },
+            RabbitMqTopology.CatalogExchange,
+            CourseRoutingKeys.CourseCreated,
+            ct);
+
         return await GetByIdAsync(course.Id, ct);
     }
 
@@ -192,12 +201,23 @@ public sealed class CourseService(
 
         var course = await uow.Courses.GetByIdAsync(id, ct)
             ?? throw new NotFoundException($"Course {id} not found");
+        var title = course.Title;
+        var instructorId = course.InstructorId;
         uow.Courses.Delete(course);
         await uow.SaveChangesAsync(ct);
 
         await cache.InvalidateAsync(CacheKeys.Course(id), "CourseDeleted", ct);
         await cache.InvalidateAsync(
-            CacheKeys.InstructorCourses(course.InstructorId), "CourseDeleted", ct);
+            CacheKeys.InstructorCourses(instructorId), "CourseDeleted", ct);
+
+        await publisher.PublishAsync(
+            new CourseDeletedEvent(id, title)
+            {
+                CorrelationId = correlation.CorrelationId
+            },
+            RabbitMqTopology.CatalogExchange,
+            CourseRoutingKeys.CourseDeleted,
+            ct);
 
         logger.LogInformation("Deleted course {CourseId}", id);
     }

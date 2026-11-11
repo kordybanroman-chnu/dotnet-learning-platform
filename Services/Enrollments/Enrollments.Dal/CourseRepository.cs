@@ -8,7 +8,10 @@ public interface ICourseRepository : IGenericRepository<Course>
 {
     Task DecreaseSeatsAsync(long courseId, int units, CancellationToken ct = default);
     Task<int> UpdateSnapshotAsync(
-        long courseId, string? title, decimal? price, CancellationToken ct = default);
+        long courseId, string? title, decimal? price, DateTime occurredAt, CancellationToken ct = default);
+    Task<int> InsertSnapshotAsync(
+        long courseId, string title, decimal price, DateTime occurredAt, CancellationToken ct = default);
+    Task<int> DeleteSnapshotAsync(long courseId, DateTime occurredAt, CancellationToken ct = default);
 }
 
 public sealed class CourseRepository(SqlConnection connection, Func<SqlTransaction?> currentTransaction)
@@ -55,7 +58,7 @@ public sealed class CourseRepository(SqlConnection connection, Func<SqlTransacti
     }
 
     public async Task<int> UpdateSnapshotAsync(
-        long courseId, string? title, decimal? price, CancellationToken ct = default)
+        long courseId, string? title, decimal? price, DateTime occurredAt, CancellationToken ct = default)
     {
         await EnsureOpenAsync(ct);
         return await Connection.ExecuteAsync(new CommandDefinition(
@@ -63,10 +66,53 @@ public sealed class CourseRepository(SqlConnection connection, Func<SqlTransacti
             UPDATE dbo.Courses
             SET Title = COALESCE(@Title, Title),
                 Price = COALESCE(@Price, Price),
+                SourceUpdatedAt = @OccurredAt,
                 UpdatedAt = SYSUTCDATETIME()
             WHERE Id = @Id
+              AND (SourceUpdatedAt IS NULL OR SourceUpdatedAt <= @OccurredAt)
             """,
-            new { Id = courseId, Title = title, Price = price },
+            new { Id = courseId, Title = title, Price = price, OccurredAt = occurredAt },
+            Transaction, cancellationToken: ct));
+    }
+
+    public async Task<int> InsertSnapshotAsync(
+        long courseId, string title, decimal price, DateTime occurredAt, CancellationToken ct = default)
+    {
+        await EnsureOpenAsync(ct);
+        return await Connection.ExecuteAsync(new CommandDefinition(
+            """
+            IF EXISTS (SELECT 1 FROM dbo.Courses WHERE Id = @Id)
+            BEGIN
+                UPDATE dbo.Courses
+                SET Title = @Title,
+                    Price = @Price,
+                    SourceUpdatedAt = @OccurredAt,
+                    UpdatedAt = SYSUTCDATETIME()
+                WHERE Id = @Id
+                  AND (SourceUpdatedAt IS NULL OR SourceUpdatedAt <= @OccurredAt)
+            END
+            ELSE
+            BEGIN
+                INSERT INTO dbo.Courses (Id, Title, Price, SeatsAvailable, SourceUpdatedAt, UpdatedAt)
+                VALUES (@Id, @Title, @Price, 0, @OccurredAt, SYSUTCDATETIME())
+            END
+            """,
+            new { Id = courseId, Title = title, Price = price, OccurredAt = occurredAt },
+            Transaction, cancellationToken: ct));
+    }
+
+    public async Task<int> DeleteSnapshotAsync(
+        long courseId, DateTime occurredAt, CancellationToken ct = default)
+    {
+        await EnsureOpenAsync(ct);
+        return await Connection.ExecuteAsync(new CommandDefinition(
+            """
+            DELETE FROM dbo.Courses
+            WHERE Id = @Id
+              AND (SourceUpdatedAt IS NULL OR SourceUpdatedAt <= @OccurredAt)
+              AND NOT EXISTS (SELECT 1 FROM dbo.EnrollmentItems WHERE CourseId = @Id)
+            """,
+            new { Id = courseId, OccurredAt = occurredAt },
             Transaction, cancellationToken: ct));
     }
 }
