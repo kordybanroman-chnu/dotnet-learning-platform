@@ -66,7 +66,7 @@ public sealed class EnrollmentMetricsPoller(
         {
             try
             {
-                using var scope = scopeFactory.CreateScope();
+                await using var scope = scopeFactory.CreateAsyncScope();
                 var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
                 var count = await uow.Enrollments.CountByStatusAsync(
                     EnrollmentStatus.AwaitingValidation, stoppingToken);
