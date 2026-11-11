@@ -370,7 +370,7 @@ Health-клієнти Aggregator не використовують resilience: �
 
 Health endpoints відкриті й поза Development, як вимагає лабораторна. У Development JSON містить `exception.Message` і `description`; поза Development обидва поля дорівнюють `null`, щоб не віддавати текст винятків і внутрішні деталі. У production endpoints треба закрити на ingress або дозволити лише службі моніторингу.
 
-Команди перевірки: `docs/lab-07/manual-checks.md`. Карта критеріїв з точними файлами й символами: `docs/lab-07/criteria.md`.
+Карта критеріїв з точними файлами, символами й командами перевірки: `docs/lab-08/criteria.md`. Додаткові ручні сценарії та знімки: `docs/lab-08/manual-checks.md`.
 
 ## Розвиток (наступні лаби)
 
