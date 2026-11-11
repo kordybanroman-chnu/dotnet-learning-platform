@@ -6,10 +6,10 @@
 
 ```bash
 dotnet build Platform.slnx --nologo
-dotnet test Services/Reviews/Reviews.Domain.Tests --nologo
+dotnet test Platform.slnx --nologo
 ```
 
-Очікування: 0 помилок, 0 попереджень, 5/5 тестів.
+Очікування: 0 помилок, 0 попереджень, 10/10 тестів (7 Reviews.Domain.Tests, 3 Platform.EventBus.Tests).
 
 ## Критерії
 
@@ -63,7 +63,7 @@ dotnet test Services/Reviews/Reviews.Domain.Tests --nologo
 Де:
 
 - `Platform.EventBus/Events/IntegrationEvent.cs`: abstract record з `EventId`, `OccurredAt`, `CorrelationId`.
-- `Platform.EventBus/Events/CourseEvents.cs`: `CoursePriceChangedEvent`, `CourseRenamedEvent`.
+- `Platform.EventBus/Events/CourseEvents.cs`: `CoursePriceChangedEvent`, `CourseRenamedEvent`, `CourseCreatedEvent`, `CourseDeletedEvent`.
 - `Services/Catalog/Catalog.Bll/CourseService.cs`, `UpdatePriceAsync` і `UpdateTitleAsync`: `CorrelationId` береться з `ICorrelationAccessor`.
 
 Перевірка: у повідомленні Management UI `properties.message_id` дорівнює `eventId`, заголовок `x-correlation-id` дорівнює `correlationId`.
@@ -128,11 +128,15 @@ Enrollments, SQL Server:
 - `db/p1/schema.sql`: `dbo.ProcessedEvents (EventId UNIQUEIDENTIFIER PRIMARY KEY, EventType, ProcessedAt)`.
 - `Services/Enrollments/Enrollments.Dal/ProcessedEventRepository.cs`, `TryAddAsync`: `INSERT`, помилки 2601/2627 означають дублікат.
 - `Services/Enrollments/Enrollments.Dal/UnitOfWork.cs`: `ProcessedEvents` доступний у спільній транзакції.
-- `CoursePriceChangedHandler.HandleAsync` і `CourseRenamedHandler.HandleAsync`: `BeginTransactionAsync`, `TryAddAsync`, `UpdateSnapshotAsync`, `CommitAsync`; дублікат відкочується й логується.
+- `Services/Enrollments/Enrollments.Api/IntegrationEvents/CatalogEventHandler.cs`, `HandleAsync`: `BeginTransactionAsync`, `TryAddAsync`, `ApplyAsync`, `CommitAsync`; дублікат відкочується й логується.
+- `CourseCreatedHandler`, `CoursePriceChangedHandler`, `CourseRenamedHandler`, `CourseDeletedHandler` успадковують `CatalogEventHandler<TEvent>`.
 
 Reviews, MongoDB:
 
-- `Services/Reviews/Reviews.WebApi/IntegrationEvents/CourseRenamedHandler.cs`, `HandleAsync`: колекція `processedEvents`, `_id` = `EventId`; перевірка перед `UpdateManyAsync`, запис після оновлення. MongoDB в Aspire працює як standalone, тому транзакції між колекціями немає; `$set` ідемпотентний, повторна доставка не змінює `courseTitle`.
+- `Services/Reviews/Reviews.WebApi/IntegrationEvents/CourseRenamedHandler.cs`, `HandleAsync`: колекція `processedEvents`, `_id` = `EventId`; перевірка, `UpdateManyAsync` і запис `EventId` виконуються в `session.StartTransaction()`, коли `MongoDb:ReplicaSet` заданий.
+- `Platform.AppHost/Program.cs`: контейнер `mongo-init` викликає `rs.initiate` для single-node replica set `rs0`; `reviews-api` отримує `MongoDb__ReplicaSet=rs0`.
+- `Services/Reviews/Reviews.Infrastructure/Persistence/MongoDbContext.cs`: `SupportsTransactions` і `MongoClientSettings.ReplicaSetName`.
+- Без replica set обробник працює без транзакції; `$set` ідемпотентний, повторна доставка не змінює `courseTitle`.
 
 Перевірка: повторна публікація події з тим самим `EventId` пише `Duplicate ... skipped`, `SELECT COUNT(*) FROM dbo.ProcessedEvents` не змінюється.
 
@@ -141,18 +145,19 @@ Reviews, MongoDB:
 Де:
 
 - Enrollments:
-  - `Services/Enrollments/Enrollments.Dal/CourseRepository.cs`, `UpdateSnapshotAsync`: `UPDATE dbo.Courses SET Title = COALESCE(@Title, Title), Price = COALESCE(@Price, Price)`;
+  - `Services/Enrollments/Enrollments.Dal/CourseRepository.cs`, `UpdateSnapshotAsync`: `UPDATE dbo.Courses SET Title = COALESCE(@Title, Title), Price = COALESCE(@Price, Price), SourceUpdatedAt = @OccurredAt` з умовою `SourceUpdatedAt IS NULL OR SourceUpdatedAt <= @OccurredAt`;
   - `CoursePriceChangedHandler` передає нову ціну й назву;
-  - `CourseRenamedHandler` передає нову назву.
+  - `CourseRenamedHandler` передає нову назву;
+  - `CourseCreatedHandler` викликає `InsertSnapshotAsync`, `CourseDeletedHandler` викликає `DeleteSnapshotAsync`.
 - Reviews:
-  - `CourseRenamedHandler.HandleAsync`: `context.Reviews.UpdateManyAsync` з фільтром `CourseId` і `Set(r => r.CourseTitle, @event.NewTitle)`.
+  - `CourseRenamedHandler.HandleAsync`: `context.Reviews.UpdateManyAsync` з фільтром `CourseId` і `CourseTitleUpdatedAt <= OccurredAt`; `Set(r => r.CourseTitle, @event.NewTitle)`.
 
-Що не змінюється: `dbo.EnrollmentItems.CourseTitle` і `dbo.EnrollmentItems.UnitPrice` лишаються знімком на момент запису.
+Що не змінюється: `dbo.EnrollmentItems.CourseTitle` і `dbo.EnrollmentItems.UnitPrice` лишаються знімком на момент запису. Старіша подія не перезаписує `SourceUpdatedAt` або `CourseTitleUpdatedAt`.
 
 Перевірка:
 
 ```sql
-SELECT Id, Title, Price FROM dbo.Courses WHERE Id = 101;
+SELECT Id, Title, Price, SourceUpdatedAt FROM dbo.Courses WHERE Id = 101;
 SELECT CourseId, CourseTitle, UnitPrice FROM dbo.EnrollmentItems WHERE CourseId = 101;
 ```
 
@@ -166,7 +171,7 @@ db.reviews.find({ courseId: 101 }, { courseTitle: 1 })
 
 - `MaxRetries = 3`;
 - `GetRetryCount` читає `x-retry-count` з `int`, `long`, `byte[]` або `string`;
-- `RetryOrDeadLetterAsync` перепублікує повідомлення в той самий exchange/routing key з `x-retry-count = attempt + 1`, потім підтверджує оригінал;
+- `RetryOrDeadLetterAsync` чекає 1, 2 і 4 с, перепублікує повідомлення в той самий exchange/routing key з `x-retry-count = attempt + 1`, потім підтверджує оригінал;
 - після трьох повторів `BasicNackAsync(..., requeue: false)`.
 
 Перевірка: зупинити SQL або перейменувати `dbo.ProcessedEvents`, опублікувати подію, побачити три логи `Retry N/3` і повідомлення в DLQ з `x-retry-count` та `x-death`.

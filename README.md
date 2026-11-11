@@ -38,6 +38,7 @@
 ├── Platform.AppHost/                 оркестрація Aspire: SQL Server, MongoDB, Redis, RabbitMQ, сервіси
 ├── Platform.ServiceDefaults/         Serilog, OpenTelemetry, CorrelationId, gRPC-інтерсептор, health checks
 ├── Platform.EventBus/                RabbitMQ: топологія, integration events, publisher, consumer
+├── Platform.EventBus.Tests/          тести серіалізації подій
 ├── Platform.ApiGateway/              YARP-шлюз на порту 5000
 ├── Platform.Aggregator/              gRPC-клієнти, агрегація картки запису, кеш відповідей
 ├── Services/
@@ -129,10 +130,12 @@ dotnet run --project Services/Reviews/Reviews.WebApi
 
 ```bash
 dotnet user-secrets set "Parameters:sql-password" "Pass@word1" --project Platform.AppHost
+dotnet user-secrets set "Parameters:mongo-user" "admin" --project Platform.AppHost
+dotnet user-secrets set "Parameters:mongo-password" "Passw0rd1" --project Platform.AppHost
 dotnet run --project Platform.AppHost
 ```
 
-`AppHost` створює контейнери SQL Server і MongoDB з іменованими volume (`WithDataVolume`), тому дані переживають перезапуск. Порядок запуску заданий `WaitFor`: БД → `enrollments-api`, `catalog-api`, `reviews-api` → `aggregator` → `gateway`. Gateway слухає `http://localhost:5000`; посилання на Dashboard з токеном друкується в консолі.
+`AppHost` створює контейнери SQL Server, MongoDB і RabbitMQ з іменованими volume (`WithDataVolume`), тому дані переживають перезапуск. Паролі Mongo задані параметрами, інакше після перезапуску з volume новий згенерований пароль не збігався б з користувачем у базі. Mongo слухає `localhost:27017` і працює як single-node replica set `rs0`: контейнер створює keyfile, `mongo-init` викликає `rs.initiate`. Порядок запуску заданий `WaitFor`: БД → `enrollments-api`, `catalog-api`, `reviews-api` → `aggregator` → `gateway`. Gateway слухає `http://localhost:5000`; посилання на Dashboard з токеном друкується в консолі.
 
 `CatalogDb` створюється міграцією `InitialCreate`, Catalog і Reviews наповнюють свої колекції під час старту. `EnrollmentsDb` створює Aspire, а таблиці треба застосувати один раз:
 
@@ -239,7 +242,7 @@ curl -X PUT 'http://localhost:5084/api/reviews/<id>' \
 curl -X DELETE 'http://localhost:5084/api/reviews/<id>'
 ```
 
-Пагінація і фільтрація виконуються в MongoDB (`$match`, `$sort`, `$skip`, `$limit`, `$project`), `totalCount` рахує `countDocuments`. Сідинг ідемпотентний: повторний запуск не додає документів, а `db.reviews.getIndexes()` показує складені, text- та unique-індекси. Доменні правила перевіряються `dotnet test Services/Reviews/Reviews.Domain.Tests` (5 тестів, зокрема `Rating = 10` кидає `DomainException` без БД). Знімки: `docs/lab-04/swagger.png`, `docs/lab-04/pagination.png`, `docs/lab-04/validation-400.png`, `docs/lab-04/mongodb-document-indexes.png`, `docs/lab-04/compass-document.png`, `docs/lab-04/logs-validation.png`, `docs/lab-04/conflict-409.png`. Команди для повторного зняття описані в `docs/lab-04/manual-checks.md`.
+Пагінація і фільтрація виконуються в MongoDB (`$match`, `$sort`, `$skip`, `$limit`, `$project`), `totalCount` рахує `countDocuments`. Сідинг ідемпотентний: повторний запуск не додає документів, а `db.reviews.getIndexes()` показує складені, text- та unique-індекси. Доменні правила перевіряються `dotnet test Services/Reviews/Reviews.Domain.Tests` (7 тестів, зокрема `Rating = 10` кидає `DomainException` без БД). Знімки: `docs/lab-04/swagger.png`, `docs/lab-04/pagination.png`, `docs/lab-04/validation-400.png`, `docs/lab-04/mongodb-document-indexes.png`, `docs/lab-04/compass-document.png`, `docs/lab-04/logs-validation.png`, `docs/lab-04/conflict-409.png`. Команди для повторного зняття описані в `docs/lab-04/manual-checks.md`.
 
 ## API Gateway і Aggregator (Лаб. 05)
 
@@ -386,6 +389,8 @@ Health endpoints відкриті й поза Development, як вимагає �
 | topic exchange | `catalog-events` | події Каталогу |
 | routing key | `course.price_changed` | зміна ціни |
 | routing key | `course.renamed` | зміна назви |
+| routing key | `course.created` | створення курсу |
+| routing key | `course.deleted` | видалення курсу |
 | queue | `enrollments.catalog-sync` | оновлення локального довідника курсів |
 | queue | `reviews.catalog-sync` | оновлення `courseTitle` у відгуках |
 | DLX + DLQ | `enrollments.catalog-sync.dlx` + `enrollments.catalog-sync.dlq` | необроблені повідомлення Enrollments |
@@ -395,7 +400,7 @@ Health endpoints відкриті й поза Development, як вимагає �
 
 ### Події та публікація
 
-`Platform.EventBus/Events/IntegrationEvent.cs` містить базовий незмінний record з `EventId`, `OccurredAt` і `CorrelationId`. `CourseEvents.cs` описує `CoursePriceChangedEvent` і `CourseRenamedEvent`; обидва самодостатні й не потребують звернення до Каталогу.
+`Platform.EventBus/Events/IntegrationEvent.cs` містить базовий незмінний record з `EventId`, `OccurredAt` і `CorrelationId`. `CourseEvents.cs` описує `CoursePriceChangedEvent`, `CourseRenamedEvent`, `CourseCreatedEvent` і `CourseDeletedEvent`; усі самодостатні й не потребують звернення до Каталогу.
 
 `Catalog.Bll/CourseService` зберігає зміни через `SaveChangesAsync`, інвалідує кеш і лише потім викликає `IEventPublisher.PublishAsync`. `RabbitMqEventPublisher` серіалізує подію в camelCase JSON і виставляє `Persistent`, `ContentType`, `MessageId = EventId`, `Type`, `CorrelationId`, `x-correlation-id`, `x-event-type`, `x-schema-version`. Заголовок `traceparent` додає `RabbitMqTrace.Inject` через стандартний propagator OpenTelemetry.
 
@@ -405,17 +410,18 @@ Health endpoints відкриті й поза Development, як вимагає �
 
 `RabbitMqEventConsumer` у `Platform.EventBus` створює канал, оголошує топологію, виставляє `BasicQos(0, 10, false)`, підписується через `AsyncEventingBasicConsumer` з `autoAck: false` і перезапускає канал після `ChannelShutdownAsync`. Похідні класи лежать у `Enrollments.Api/IntegrationEvents/` і `Reviews.WebApi/IntegrationEvents/`.
 
-Після успішного обробника викликається `BasicAckAsync`. Помилка JSON або невідомий тип одразу відправляє повідомлення в DLQ через `BasicNackAsync(requeue: false)`. Інші винятки перепублікуються з заголовком `x-retry-count`; після трьох повторів повідомлення також іде в DLQ. Кожна спроба логується з `MessageId`, `EventId`, `EventType`, `CorrelationId` і повним стеком.
+Після успішного обробника викликається `BasicAckAsync`. Помилка JSON або невідомий тип одразу відправляє повідомлення в DLQ через `BasicNackAsync(requeue: false)`. Інші винятки перепублікуються з заголовком `x-retry-count` після затримки 1, 2 і 4 с; після трьох повторів повідомлення також іде в DLQ. Кожна спроба логується з `MessageId`, `EventId`, `EventType`, `CorrelationId` і повним стеком.
 
 Ідемпотентність:
 
 - SQL Server: таблиця `dbo.ProcessedEvents (EventId PRIMARY KEY, EventType, ProcessedAt)`; `INSERT` EventId і оновлення `dbo.Courses` виконуються в одній транзакції `UnitOfWork`. Дублікат ключа повертає `false`, транзакція відкочується, подія підтверджується без повторної зміни даних.
-- MongoDB: колекція `processedEvents`, де `_id` = `EventId`; обробник перевіряє `_id` перед `UpdateManyAsync` і записує його після оновлення. Повторна доставка не змінює `courseTitle` удруге. MongoDB в Aspire працює як standalone, тому транзакції між колекціями немає; `$set` ідемпотентний.
+- MongoDB: колекція `processedEvents`, де `_id` = `EventId`. `AppHost` піднімає Mongo як single-node replica set `rs0` через `mongo-init`, тому `CourseRenamedHandler` обгортає перевірку `_id`, `UpdateManyAsync` і запис `EventId` у `session.StartTransaction()`. Без replica set (`MongoDb:ReplicaSet` не заданий) обробник працює без транзакції, але `$set` ідемпотентний.
 
 Реплікація за політикою Лаб. 01:
 
-- Enrollments оновлює `dbo.Courses.Title` і `dbo.Courses.Price`; `EnrollmentItems.CourseTitle` і `EnrollmentItems.UnitPrice` лишаються знімком на момент запису.
-- Reviews оновлює `courseTitle` в усіх документах `reviews` з тим самим `courseId`.
+- Enrollments оновлює `dbo.Courses.Title`, `Price` і `SourceUpdatedAt`; `EnrollmentItems.CourseTitle` і `EnrollmentItems.UnitPrice` лишаються знімком на момент запису. Подія з `OccurredAt`, старішим за `SourceUpdatedAt`, не перезаписує новіші дані.
+- `CourseCreatedEvent` додає новий курс у локальну копію з `SeatsAvailable = 0`. `CourseDeletedEvent` видаляє копію лише тоді, коли на курс не посилається жоден `EnrollmentItem`; інакше рядок лишається для історії записів.
+- Reviews оновлює `courseTitle` і `CourseTitleUpdatedAt` в усіх документах `reviews` з тим самим `courseId`; старіша подія не перезаписує новішу назву.
 
 ### Перевірка
 
@@ -443,7 +449,7 @@ dotnet run --project Services/Enrollments/Enrollments.Api
 dotnet run --project Services/Reviews/Reviews.WebApi
 ```
 
-Для існуючої бази `EnrollmentsDb` таблицю `ProcessedEvents` створює `db/p1/schema.sql`; на вже розгорнутій базі виконайте `CREATE TABLE dbo.ProcessedEvents (...)` з цього файлу вручну. Для зміни аргументів уже створеної черги видаліть її в Management UI перед перезапуском: RabbitMQ не дозволяє змінити `x-dead-letter-exchange` на льоту.
+Для існуючої бази `EnrollmentsDb` таблицю `ProcessedEvents` і колонку `dbo.Courses.SourceUpdatedAt` створює `db/p1/schema.sql`; на вже розгорнутій базі виконайте відповідні `CREATE TABLE` і `ALTER TABLE` з цього файлу вручну. `AppHost` запускає Mongo як replica set `rs0`: контейнер створює keyfile, а `mongo-init` викликає `rs.initiate` з адресою `localhost:27017`. Локальний запуск Reviews без AppHost працює з standalone Mongo: транзакція вимикається, ідемпотентність лишається через `$set`. Для зміни аргументів уже створеної черги видаліть її в Management UI перед перезапуском: RabbitMQ не дозволяє змінити `x-dead-letter-exchange` на льоту.
 
 Карта критеріїв з точними файлами, символами й командами перевірки: `docs/lab-08/criteria.md`. Додаткові ручні сценарії та знімки: `docs/lab-08/manual-checks.md`.
 

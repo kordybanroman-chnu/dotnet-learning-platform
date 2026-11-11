@@ -2,6 +2,15 @@
 
 Команди наведені для локального запуску без AppHost. Замініть `<catalog-api-url>`, `<enrollments-api-url>`, `<reviews-api-url>` на фактичні адреси, якщо використовуєте Aspire Dashboard.
 
+Самоперевірка коду:
+
+```bash
+dotnet build Platform.slnx --nologo
+dotnet test Platform.slnx --nologo
+```
+
+Очікування: 0 помилок, 0 попереджень, 10/10 тестів.
+
 ## 1. Запуск інфраструктури
 
 ```bash
@@ -15,6 +24,8 @@ docker run -d --name lab8-redis -p 6379:6379 redis:8.2
 docker run -d --name lab8-rabbit \
   -p 5672:5672 -p 15672:15672 rabbitmq:4-management
 ```
+
+Для перевірки транзакції Reviews запустіть `Platform.AppHost`: він піднімає Mongo як replica set `rs0` і передає `MongoDb__ReplicaSet=rs0`. Перед першим запуском задайте `Parameters:sql-password`, `Parameters:mongo-user` і `Parameters:mongo-password` у user-secrets AppHost. Локальний `mongo:8.0` без AppHost працює standalone, тому Reviews використовує ідемпотентний fallback без транзакції.
 
 `EnrollmentsDb`:
 
@@ -121,7 +132,33 @@ docker exec lab8-mongo mongosh --quiet FeedbackDb \
   --eval 'db.reviews.find({courseId:101},{courseTitle:1}).toArray()'
 ```
 
-`dbo.Courses.Title` = `Основи C# 12`. `dbo.EnrollmentItems.CourseTitle` = `Основи C#`, знімок не змінився. `reviews.courseTitle` = `Основи C# 12` у всіх документах курсу 101.
+`dbo.Courses.Title` = `Основи C# 12`. `dbo.EnrollmentItems.CourseTitle` = `Основи C#`, знімок не змінився. `reviews.courseTitle` = `Основи C# 12` у всіх документах курсу 101. З `AppHost` Reviews працює з replica set `rs0`, тому `processedEvents` і `UpdateManyAsync` виконуються в одній транзакції.
+
+## 4.1. Створення, видалення та out-of-order
+
+Створення курсу:
+
+```bash
+curl -s -X POST '<catalog-api-url>/api/courses' \
+  -H 'Content-Type: application/json' \
+  -H 'X-Correlation-Id: demo-create-1' \
+  -d '{"title":"Подієвий курс","slug":"demo-event-course","price":777,"instructorId":1,"categoryIds":[1]}'
+```
+
+Очікування: у `dbo.Courses` з'являється рядок з `SeatsAvailable = 0` і `SourceUpdatedAt`, у `dbo.ProcessedEvents` є `CourseCreatedEvent`.
+
+Видалення:
+
+```bash
+curl -i -X DELETE '<catalog-api-url>/api/courses/<new-id>' \
+  -H 'X-Correlation-Id: demo-delete-1'
+```
+
+Очікування: якщо на курс немає `EnrollmentItems`, рядок `dbo.Courses` зникає, у `ProcessedEvents` є `CourseDeletedEvent`. Якщо позиції є, рядок лишається для історії, а в логах буде `was retained`.
+
+Out-of-order: опублікуйте через Management UI `CourseRenamedEvent` для курсу 101 з `occurredAt` раніше за поточний `SourceUpdatedAt`.
+
+Очікування: `dbo.Courses.Title` і `reviews.courseTitle` не змінюються, у логах `stale event`. Подія з новішим `occurredAt` змінює обидві копії.
 
 ## 5. Ідемпотентність
 
@@ -166,7 +203,7 @@ docker exec lab8-sql /opt/mssql-tools18/bin/sqlcmd \
 
 Опублікуйте коректну `CourseRenamedEvent` для курсу 102 з новим `eventId` і routing key `course.renamed`.
 
-Очікування в логах Enrollments: `Retry 1/3`, `Retry 2/3`, `Retry 3/3`, потім `failed after 3 attempts; sending to DLQ`. У DLQ видно `x-retry-count = 3` і `x-death`.
+Очікування в логах Enrollments: `Retry 1/3`, `Retry 2/3`, `Retry 3/3` із затримкою 1, 2 і 4 с, потім `failed after 3 attempts; sending to DLQ`. У DLQ видно `x-retry-count = 3` і `x-death`.
 
 Поверніть таблицю:
 
