@@ -410,7 +410,7 @@ Health endpoints відкриті й поза Development, як вимагає �
 Ідемпотентність:
 
 - SQL Server: таблиця `dbo.ProcessedEvents (EventId PRIMARY KEY, EventType, ProcessedAt)`; `INSERT` EventId і оновлення `dbo.Courses` виконуються в одній транзакції `UnitOfWork`. Дублікат ключа повертає `false`, транзакція відкочується, подія підтверджується без повторної зміни даних.
-- MongoDB: колекція `processedEvents`, де `_id` = `EventId`; обробник перевіряє `_id` перед `UpdateManyAsync` і записує його після оновлення. Повторна доставка не змінює `courseTitle` удруге.
+- MongoDB: колекція `processedEvents`, де `_id` = `EventId`; обробник перевіряє `_id` перед `UpdateManyAsync` і записує його після оновлення. Повторна доставка не змінює `courseTitle` удруге. MongoDB в Aspire працює як standalone, тому транзакції між колекціями немає; `$set` ідемпотентний.
 
 Реплікація за політикою Лаб. 01:
 

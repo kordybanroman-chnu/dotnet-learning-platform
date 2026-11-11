@@ -173,7 +173,7 @@ docker exec lab8-sql /opt/mssql-tools18/bin/sqlcmd \
 ```bash
 docker exec lab8-sql /opt/mssql-tools18/bin/sqlcmd \
   -S localhost -U sa -P 'Pass@word1' -C -d EnrollmentsDb \
-  -Q "EXEC sp_rename 'dbo.ProcessedEvents_off', 'dbo.ProcessedEvents'"
+  -Q "EXEC sp_rename 'dbo.ProcessedEvents_off', 'ProcessedEvents'"
 ```
 
 ## 7. Обробка після перезапуску

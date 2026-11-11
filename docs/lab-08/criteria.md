@@ -132,7 +132,7 @@ Enrollments, SQL Server:
 
 Reviews, MongoDB:
 
-- `Services/Reviews/Reviews.WebApi/IntegrationEvents/CourseRenamedHandler.cs`, `HandleAsync`: колекція `processedEvents`, `_id` = `EventId`; перевірка перед `UpdateManyAsync`, запис після оновлення.
+- `Services/Reviews/Reviews.WebApi/IntegrationEvents/CourseRenamedHandler.cs`, `HandleAsync`: колекція `processedEvents`, `_id` = `EventId`; перевірка перед `UpdateManyAsync`, запис після оновлення. MongoDB в Aspire працює як standalone, тому транзакції між колекціями немає; `$set` ідемпотентний, повторна доставка не змінює `courseTitle`.
 
 Перевірка: повторна публікація події з тим самим `EventId` пише `Duplicate ... skipped`, `SELECT COUNT(*) FROM dbo.ProcessedEvents` не змінюється.
 
