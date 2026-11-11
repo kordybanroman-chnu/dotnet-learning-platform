@@ -35,19 +35,20 @@
 │   ├── p2/
 │   └── p3/
 ├── Platform.slnx
-├── Platform.AppHost/                 оркестрація Aspire: SQL Server, MongoDB, Redis, сервіси
+├── Platform.AppHost/                 оркестрація Aspire: SQL Server, MongoDB, Redis, RabbitMQ, сервіси
 ├── Platform.ServiceDefaults/         Serilog, OpenTelemetry, CorrelationId, gRPC-інтерсептор, health checks
+├── Platform.EventBus/                RabbitMQ: топологія, integration events, publisher, consumer
 ├── Platform.ApiGateway/              YARP-шлюз на порту 5000
 ├── Platform.Aggregator/              gRPC-клієнти, агрегація картки запису, кеш відповідей
 ├── Services/
 │   ├── Enrollments/
-│   │   ├── Enrollments.Api/          контролери, Protos/, Grpc/, Metrics/, HealthChecks/, Program.cs
+│   │   ├── Enrollments.Api/          контролери, Protos/, Grpc/, Metrics/, HealthChecks/, IntegrationEvents/, Program.cs
 │   │   ├── Enrollments.Bll/
 │   │   ├── Enrollments.Dal/
 │   │   └── Enrollments.Domain/
 │   ├── Catalog/
 │   │   ├── Catalog.Api/          контролери, Protos/, Grpc/, Metrics/, HealthChecks/, Program.cs
-│   │   ├── Catalog.Bll/          сервіси, DTO, Caching/ (L1 + L2)
+│   │   ├── Catalog.Bll/          сервіси, DTO, Caching/ (L1 + L2), публікація подій
 │   │   ├── Catalog.Dal/
 │   │   │   ├── Configurations/
 │   │   │   └── Migrations/
@@ -56,7 +57,7 @@
 │       ├── Reviews.Domain/     сутності, Value Objects, інтерфейси
 │       ├── Reviews.Application/ команди, запити, behaviors, DTO
 │       ├── Reviews.Infrastructure/ Mongo-контекст, BSON-мапінг, репозиторії, сідинг
-│       └── Reviews.WebApi/     контролери, Protos/, Grpc/, Metrics/, HealthChecks/, Program.cs, ProblemDetails
+│       └── Reviews.WebApi/     контролери, Protos/, Grpc/, Metrics/, HealthChecks/, IntegrationEvents/, Program.cs, ProblemDetails
 └── deploy/k8s/
 ```
 
@@ -369,6 +370,80 @@ Health-клієнти Aggregator не використовують resilience: �
 `Platform.AppHost` додає `.WithHttpHealthCheck("/health")` кожному проєкту. `WaitFor` залишений лише для критичних залежностей: БД, Enrollments і Catalog. Redis і Reviews підключаються через `WithReference` без `WaitFor`, тому їх недоступність на старті не блокує Catalog, Aggregator чи Gateway. Dashboard показує стан ресурсу, а деталі health checks доступні в його картці.
 
 Health endpoints відкриті й поза Development, як вимагає лабораторна. У Development JSON містить `exception.Message` і `description`; поза Development обидва поля дорівнюють `null`, щоб не віддавати текст винятків і внутрішні деталі. У production endpoints треба закрити на ingress або дозволити лише службі моніторингу.
+
+## Подієва архітектура з RabbitMQ (Лаб. 08)
+
+### Брокер і топологія
+
+`Platform.AppHost` додає контейнер `messaging` через `AddRabbitMQ("messaging")` з `.WithDataVolume()` і `.WithManagementPlugin()`. Management UI відкривається на порту 15672, облікові дані генерує Aspire. `catalog-api`, `enrollments-api` і `reviews-api` отримують `ConnectionStrings__messaging` через `WithReference` і чекають брокер через `WaitFor`.
+
+Клієнт RabbitMQ підключений пакетом `Aspire.RabbitMQ.Client` 13.6.5 і `RabbitMQ.Client` 7.2.2. `builder.AddEventBus()` у `Platform.EventBus` викликає `AddRabbitMQClient("messaging")`, реєструє singleton `IConnection`, health check `RabbitMQ.Client`, publisher і hosted service, що оголошує топологію. Канали `IChannel` створюються на кожну операцію або consumer.
+
+Топологію описано в `Platform.EventBus/RabbitMqTopology.cs`:
+
+| Об'єкт | Ім'я | Призначення |
+| --- | --- | --- |
+| topic exchange | `catalog-events` | події Каталогу |
+| routing key | `course.price_changed` | зміна ціни |
+| routing key | `course.renamed` | зміна назви |
+| queue | `enrollments.catalog-sync` | оновлення локального довідника курсів |
+| queue | `reviews.catalog-sync` | оновлення `courseTitle` у відгуках |
+| DLX + DLQ | `enrollments.catalog-sync.dlx` + `enrollments.catalog-sync.dlq` | необроблені повідомлення Enrollments |
+| DLX + DLQ | `reviews.catalog-sync.dlx` + `reviews.catalog-sync.dlq` | необроблені повідомлення Reviews |
+
+`enrollments.catalog-sync` прив'язана шаблоном `course.*`, тому отримує обидві події. `reviews.catalog-sync` прив'язана лише до `course.renamed`: ціна у відгуках не зберігається. Кожна черга має власний DLX, тому відхилене повідомлення не дублюється в чужий DLQ.
+
+### Події та публікація
+
+`Platform.EventBus/Events/IntegrationEvent.cs` містить базовий незмінний record з `EventId`, `OccurredAt` і `CorrelationId`. `CourseEvents.cs` описує `CoursePriceChangedEvent` і `CourseRenamedEvent`; обидва самодостатні й не потребують звернення до Каталогу.
+
+`Catalog.Bll/CourseService` зберігає зміни через `SaveChangesAsync`, інвалідує кеш і лише потім викликає `IEventPublisher.PublishAsync`. `RabbitMqEventPublisher` серіалізує подію в camelCase JSON і виставляє `Persistent`, `ContentType`, `MessageId = EventId`, `Type`, `CorrelationId`, `x-correlation-id`, `x-event-type`, `x-schema-version`. Заголовок `traceparent` додає `RabbitMqTrace.Inject` через стандартний propagator OpenTelemetry.
+
+Зміна ціни: `PUT /api/courses/{id}/price`. Зміна назви: `PUT /api/courses/{id}/title` з тілом `{"title":"..."}`.
+
+### Споживачі, ідемпотентність і помилки
+
+`RabbitMqEventConsumer` у `Platform.EventBus` створює канал, оголошує топологію, виставляє `BasicQos(0, 10, false)`, підписується через `AsyncEventingBasicConsumer` з `autoAck: false` і перезапускає канал після `ChannelShutdownAsync`. Похідні класи лежать у `Enrollments.Api/IntegrationEvents/` і `Reviews.WebApi/IntegrationEvents/`.
+
+Після успішного обробника викликається `BasicAckAsync`. Помилка JSON або невідомий тип одразу відправляє повідомлення в DLQ через `BasicNackAsync(requeue: false)`. Інші винятки перепублікуються з заголовком `x-retry-count`; після трьох повторів повідомлення також іде в DLQ. Кожна спроба логується з `MessageId`, `EventId`, `EventType`, `CorrelationId` і повним стеком.
+
+Ідемпотентність:
+
+- SQL Server: таблиця `dbo.ProcessedEvents (EventId PRIMARY KEY, EventType, ProcessedAt)`; `INSERT` EventId і оновлення `dbo.Courses` виконуються в одній транзакції `UnitOfWork`. Дублікат ключа повертає `false`, транзакція відкочується, подія підтверджується без повторної зміни даних.
+- MongoDB: колекція `processedEvents`, де `_id` = `EventId`; обробник перевіряє `_id` перед `UpdateManyAsync` і записує його після оновлення. Повторна доставка не змінює `courseTitle` удруге.
+
+Реплікація за політикою Лаб. 01:
+
+- Enrollments оновлює `dbo.Courses.Title` і `dbo.Courses.Price`; `EnrollmentItems.CourseTitle` і `EnrollmentItems.UnitPrice` лишаються знімком на момент запису.
+- Reviews оновлює `courseTitle` в усіх документах `reviews` з тим самим `courseId`.
+
+### Перевірка
+
+```bash
+dotnet build Platform.slnx --nologo
+dotnet test Services/Reviews/Reviews.Domain.Tests --nologo
+
+curl -X PUT '<catalog-api-url>/api/courses/101/price' \
+  -H 'Content-Type: application/json' -H 'X-Correlation-Id: demo-price-1' \
+  -d '{"price":1350}'
+
+curl -X PUT '<catalog-api-url>/api/courses/101/title' \
+  -H 'Content-Type: application/json' -H 'X-Correlation-Id: demo-rename-1' \
+  -d '{"title":"Основи C# 12"}'
+```
+
+Очікування: `dbo.Courses` містить нову ціну й назву, `dbo.EnrollmentItems` зберігає стару ціну, `reviews.courseTitle` містить нову назву. Логи publisher і consumer мають однаковий `TraceId`; у Traces Aspire видно HTTP → publish → consume → SQL/Mongo. Повторна публікація того самого `EventId` пише `Duplicate ... skipped`. Некоректний JSON через Management UI збільшує `messages` у відповідному DLQ. Зупинка `enrollments-api`, зміна ціни й повторний старт обробляють накопичені повідомлення.
+
+Локальний запуск без AppHost:
+
+```bash
+docker run -d --name messaging -p 5672:5672 -p 15672:15672 rabbitmq:4-management
+dotnet run --project Services/Catalog/Catalog.Api
+dotnet run --project Services/Enrollments/Enrollments.Api
+dotnet run --project Services/Reviews/Reviews.WebApi
+```
+
+Для існуючої бази `EnrollmentsDb` таблицю `ProcessedEvents` створює `db/p1/schema.sql`; на вже розгорнутій базі виконайте `CREATE TABLE dbo.ProcessedEvents (...)` з цього файлу вручну. Для зміни аргументів уже створеної черги видаліть її в Management UI перед перезапуском: RabbitMQ не дозволяє змінити `x-dead-letter-exchange` на льоту.
 
 Карта критеріїв з точними файлами, символами й командами перевірки: `docs/lab-08/criteria.md`. Додаткові ручні сценарії та знімки: `docs/lab-08/manual-checks.md`.
 
